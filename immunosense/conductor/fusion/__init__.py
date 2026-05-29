@@ -1,7 +1,31 @@
-"""Cross-agent fusion (Challenge 3). Sprint 6 implementation; Sprint 5 stubs."""
+"""Cross-agent fusion (Challenge 3): Bayesian probability, corroboration, risk.
 
-from immunosense.conductor.fusion.corroboration import Corroboration
-from immunosense.conductor.fusion.risk_engine import RiskEngine
-from immunosense.conductor.fusion.statistical_fusion import StatisticalFusion
+Phase 1 (statistical_fusion) is the math truth. Phase 2 (corroboration) is
+semantic only and never affects the probability. Phase 4 (risk_engine) consumes
+the probability for a UI composite and never re-derives it.
+"""
 
-__all__ = ["StatisticalFusion", "Corroboration", "RiskEngine"]
+from immunosense.conductor.fusion.corroboration import (
+    Corroboration,
+    CorroborationPattern,
+    MatchedPattern,
+)
+from immunosense.conductor.fusion.risk_engine import RiskEngine, RiskResult
+from immunosense.conductor.fusion.statistical_fusion import (
+    AgentContribution,
+    FusionResult,
+    StatisticalFusion,
+    extract_signal_strength,
+)
+
+__all__ = [
+    "StatisticalFusion",
+    "FusionResult",
+    "AgentContribution",
+    "extract_signal_strength",
+    "Corroboration",
+    "CorroborationPattern",
+    "MatchedPattern",
+    "RiskEngine",
+    "RiskResult",
+]

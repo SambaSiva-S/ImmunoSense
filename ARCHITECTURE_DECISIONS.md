@@ -45,12 +45,14 @@ revisit, not an incidental refactor.
 | 1+2 | done | C2, C4 (partial) | Foundation + Agents 3, 4, 5 extracted |
 | 3 | done | C2, C4 | Agent 2 (Dietary) |
 | 4 | done | C2, C5, C4 | Agent 1 (Biomarker) |
-| **5** | **this sprint** | **C1, C7, C9** | **Conductor + Layer A + Adapters** |
-| 6 | planned | C3, C5 | Fusion (Bayesian + corroboration + risk) + TFM + JEPA envelope |
+| 5 | done | C1, C7, C9 | Conductor + Layer A + Adapters |
+| **6** | **this sprint** | **C3, C5, C2** | **Fusion (Bayesian + corroboration + risk) + TFM + JEPA envelope** |
+| 6.5 (new) | planned | — | **Data architecture + UI/App** (web portal + mobile, backend API, DB, auth — confirmed primary focus after Sprint 6) |
 | 7 | planned | C8 | MEM0 long-term memory |
-| 8 | planned | C2 final | Agents 6, 7, 8 |
+| 8 | planned | C2 final | Agents 6, 7 (molecular/genomics), 8 — gated by data architecture |
 | 9 | planned | C10 Level 1 | Auto-Research weekly review |
 | v2 | deferred | C5 model, C10 L2–4 | Real JEPA training; per-patient & cross-patient learning |
+| later | deferred | — | Recommendation engine; Causal inference layer (require safety framework + longitudinal data) |
 
 ---
 
@@ -131,3 +133,114 @@ immunosense/
 
 All five already return the same `AgentOutput` and already self-report
 `confidence`, which is why adapters only translate **in**.
+
+---
+
+## Sprint 6 — Inference layer design (locked)
+
+### What Sprint 6 built (Challenges 3, 5, 2)
+
+```
+immunosense/
+├── conductor/
+│   ├── calibration/             # Versioned LR table (lr-v1) — Q1 decision
+│   │   └── likelihood_ratios.py
+│   ├── fusion/
+│   │   ├── statistical_fusion.py  # Bayesian probability (Phase 1 — math truth)
+│   │   ├── corroboration.py       # 7 cross-disease patterns (Phase 2 — semantic only)
+│   │   └── risk_engine.py         # Severity composite (Phase 4 — UI-facing)
+│   └── decision/
+│       └── decision_maker.py      # TFM/alert policy (Phase 3 + policy)
+├── tfm/                         # Thinking Machine (Challenge 2)
+│   ├── base.py                  # ThinkingMachine protocol + shared prompt
+│   ├── mock_tfm.py              # Deterministic mock (tests use this)
+│   ├── claude_tfm.py            # v1 default — fail-safe Anthropic API client
+│   └── local_llm_tfm.py         # Scaffold for local Llama swap (Ollama/vLLM)
+├── knowledge/                   # KB seam — NullKB now, real KB later
+│   └── base.py
+└── inference/
+    └── patient_day_embedding.py # JEPACompatible + PatientDayEmbedding (Challenge 5)
+```
+
+### Locked decisions (Sprint 6)
+
+1. **Likelihood ratios** are a **versioned calibration table** (`lr-v1`), seeded
+   by reasoned defaults with literature direction noted on each entry. Every LR
+   carries an explicit `source` field. Auto-Research (Sprint 9) writes new
+   versions rather than mutating in place; patient history is interpreted against
+   the LR version live when computed.
+
+2. **Bayesian fusion** combines per-agent likelihood ratios in **log-odds space**
+   with **quality tempering**: `effective_log_LR = quality * log(LR)`. A
+   zero-quality agent contributes nothing; full quality contributes the full LR.
+   **INSUFFICIENT confidence gates the probability to `None`** (Challenge 7).
+
+3. **Corroboration is semantic-only** — 7 cross-disease patterns. `MatchedPattern`
+   has no probability field; structural enforcement of the "no double-counting"
+   rule (Challenge 3 design fix). Patterns are provisional (literature-informed
+   or default-reasoned), each with a `source`.
+
+4. **Risk engine consumes the probability**, blends with `acute_severity` (max
+   signal across reporting agents), and **damps by confidence level**. Gates to
+   `None` when probability is gated.
+
+5. **Decision policy is separated from the math.** Default thresholds:
+   `severity >= 0.6` or `probability >= 0.5` or flare button → alert. Pattern
+   match or moderate/high band → call TFM. Insufficient confidence → no alert,
+   TFM optional to explain the gap. **Flare button is honored even under
+   insufficient confidence** (safety override).
+
+6. **ClaudeTFM is the v1 default**, with `ThinkingMachine` abstraction making
+   any other model (local Llama via Ollama/vLLM, mock) a drop-in swap. All
+   backends share the same grounded, guardrailed prompt from `tfm.base`.
+
+7. **NullKB now**; real KB later from autoimmune flare/disease-activity
+   literature. The TFM handles empty `kb_context` gracefully.
+
+8. **PatientDayEmbedding** envelope: each agent keeps its native dim; assembly
+   produces a **stable 87-dim concatenation** in a fixed agent order with
+   zero-blocks for absent agents and a presence mask. Layout version `pde-v1`.
+   JEPA *model* architecture deferred to v2.
+
+### TFM swappability (Challenge 2, concrete)
+
+Three backends ship in `tfm/`, all conforming to the `ThinkingMachine` protocol:
+
+- **MockTFM** — deterministic, no network/key/GPU. Tests use this. Also the
+  Conductor default so the system runs out-of-the-box.
+- **ClaudeTFM** — v1 production default. Lazy SDK import, lazy key check, **never
+  raises into the Conductor** (any error → degraded `TFMResponse(ok=False)`
+  carrying the safe fallback explanation).
+- **LocalLLMTFM** — scaffold for a future Ollama / vLLM backend (e.g. Llama 3.1
+  8B). Currently returns the safe fallback; documented swap target for
+  HIPAA-friendly deployment.
+
+Swap is one construction line: `Conductor(..., tfm=ClaudeTFM())`.
+
+### Sprint 6 honest deferrals
+
+These were intentionally deferred from Sprint 6, with the recorded reason:
+
+- **Allen Institute / CELLxGENE molecular data (scRNA-seq, CellTypist models,
+  clinical labs)** — evaluated during Sprint 6, found to be molecular reference
+  data that does **not** fit the TFM's grounding slot (it's cell-level
+  transcriptomics, not flare/disease-activity knowledge). It is recorded here as
+  **candidate reference data for a future Agent 7 (molecular/genomics)** — to
+  be built only after the data architecture and UI/App (Sprint 6.5) exist and
+  the product decision on patient sequencing ingestion is made. License/use
+  terms must be confirmed before any of this enters a clinical product.
+- **Real KB content** for TFM grounding — deferred until literature sourcing
+  is deliberate (autoimmune disease-activity, flare onset signals); NullKB
+  bridges the gap.
+- **Recommendation engine** and **Causal inference layer** — both require
+  prerequisites we don't yet have: a clinical safety framework (recommendations)
+  and longitudinal patient data (causal). Sequenced **after** the app exists
+  and MEM0 / Auto-Research have accumulated history.
+
+### Provisional content disclosure (Sprint 6)
+
+The LR table values, the 7 corroboration patterns, and the LR/decision/risk
+thresholds are **provisional starting values** — reasoned defaults, some
+literature-informed where the direction is well-established. None should be
+treated as clinically validated. They are tuning points the Auto-Research loop
+is designed to calibrate (Sprint 9 read-only, deeper levels deferred to v2).

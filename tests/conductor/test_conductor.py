@@ -41,16 +41,26 @@ class TestConductorFlow:
         assert report.agent_quality["agent1_biomarker"].ok
         assert report.agent_quality["agent5_symptoms_mood"].ok
 
-    def test_sprint6_fields_are_stubs(self, setup):
+    def test_sprint6_inference_runs(self, setup):
+        # With a single zero-confidence fake agent, confidence is INSUFFICIENT,
+        # so fusion gates probability to None — but the decision layer still
+        # calls the TFM to explain the 'not enough data' state, and an
+        # explanation is produced (via the default MockTFM).
         conductor, log, bucket, ts = setup
         pb = PatientBucket(bucket=bucket)
         pb.add(AgentData("agent5_symptoms_mood", "summary", produced_at=ts))
         report = conductor.evaluate_bucket(pb)
+        # Gated: insufficient confidence -> no probability/composite.
         assert report.flare_probability is None
-        assert report.matched_patterns == []
         assert report.severity_composite is None
-        assert report.decision is not None  # stub returns a no-op decision
-        assert report.decision.call_tfm is False
+        # But the decision + TFM still ran to explain the gap.
+        assert report.decision is not None
+        assert report.decision.call_tfm is True
+        assert report.explanation is not None
+        assert report.tfm_ok is True
+        # Embedding envelope assembled regardless.
+        assert report.embedding_concat_dim == 87
+        assert report.calibration_version == "lr-v1"
 
     def test_one_agent_fails_other_continues(self, setup):
         conductor, log, bucket, ts = setup
