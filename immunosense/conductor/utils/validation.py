@@ -1,6 +1,6 @@
 """Input validation for the Conductor.
 
-Before evaluating a bucket the Conductor validates the PatientBucket so
+Before evaluating a bucket the Conductor validates the UserBucket so
 malformed input produces a clear error rather than a confusing failure deep
 inside an adapter. Validation is intentionally lightweight — it checks
 structure, not domain semantics (an adapter still error-isolates bad domain
@@ -10,21 +10,21 @@ objects).
 from __future__ import annotations
 
 from immunosense.adapters.adapter_registry import AdapterRegistry
-from immunosense.events.bucket import PatientBucket
+from immunosense.events.bucket import UserBucket
 
 
 class BucketValidationError(ValueError):
-    """Raised when a PatientBucket is structurally invalid."""
+    """Raised when a UserBucket is structurally invalid."""
 
 
-def validate_patient_bucket(
-    patient_bucket: PatientBucket,
+def validate_user_bucket(
+    user_bucket: UserBucket,
     registry: AdapterRegistry,
 ) -> list:
-    """Validate a PatientBucket against a registry.
+    """Validate a UserBucket against a registry.
 
     Checks:
-        - bucket is present and has a patient_id
+        - bucket is present and has a user_id
         - every agent_id in agent_data has a registered adapter
         - flare_button severity, if present, is in [0, 1]
 
@@ -35,21 +35,21 @@ def validate_patient_bucket(
     """
     warnings: list = []
 
-    if patient_bucket is None:
-        raise BucketValidationError("patient_bucket is None")
-    if patient_bucket.bucket is None:
-        raise BucketValidationError("patient_bucket.bucket is None")
-    if not patient_bucket.patient_id:
-        raise BucketValidationError("patient_bucket has empty patient_id")
+    if user_bucket is None:
+        raise BucketValidationError("user_bucket is None")
+    if user_bucket.bucket is None:
+        raise BucketValidationError("user_bucket.bucket is None")
+    if not user_bucket.user_id:
+        raise BucketValidationError("user_bucket has empty user_id")
 
-    for agent_id in patient_bucket.reporting_agents:
+    for agent_id in user_bucket.reporting_agents:
         if not registry.has(agent_id):
             warnings.append(
                 f"agent_data contains {agent_id!r} but no adapter is "
                 f"registered for it; this agent will be skipped"
             )
 
-    fb = patient_bucket.flare_button
+    fb = user_bucket.flare_button
     if fb is not None and not (0.0 <= float(fb) <= 1.0):
         raise BucketValidationError(
             f"flare_button severity {fb} out of range [0, 1]"

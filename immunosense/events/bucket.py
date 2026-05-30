@@ -13,14 +13,14 @@ Two distinct concerns live here:
    v1 uses UTC boundaries (simple, testable, globally consistent).
    Patient-local-timezone bucketing is a documented v2 option.
 
-2. PatientBucket — the Option B data carrier.
+2. UserBucket — the Option B data carrier.
    The caller (ingestion / app / test harness) builds each agent's domain
    object using that agent's existing Layer 2 pipeline, then drops them
-   into a PatientBucket. The Conductor routes each domain object to the
+   into a UserBucket. The Conductor routes each domain object to the
    right adapter. Adapters stay thin: they do NOT build domain objects.
 
    Agents that have no data for a bucket are simply absent from the
-   PatientBucket — the Conductor's quality scoring handles the gap.
+   UserBucket — the Conductor's quality scoring handles the gap.
 """
 
 from __future__ import annotations
@@ -42,14 +42,14 @@ class TimeBucket:
     """One 6-hour window on the UTC grid for a specific patient.
 
     Fields:
-        patient_id: Owner of this bucket.
+        user_id: Owner of this bucket.
         date: Calendar date (UTC) of the bucket's start.
         index: 0..3 (T0..T3).
         start: Inclusive UTC start of the window.
         end: Exclusive UTC end of the window.
     """
 
-    patient_id: str
+    user_id: str
     date: str  # "YYYY-MM-DD" (UTC)
     index: int
     start: datetime
@@ -63,7 +63,7 @@ class TimeBucket:
     @property
     def bucket_id(self) -> str:
         """Stable id used on every Event, e.g. 'patient001_2026-05-27_T2'."""
-        return f"{self.patient_id}_{self.date}_{self.label}"
+        return f"{self.user_id}_{self.date}_{self.label}"
 
     def contains(self, ts: datetime) -> bool:
         """True if timestamp ts falls within [start, end)."""
@@ -75,7 +75,7 @@ class BucketBuilder:
     """Builds TimeBuckets from timestamps on the fixed UTC 6h grid."""
 
     @staticmethod
-    def bucket_for(patient_id: str, ts: datetime) -> TimeBucket:
+    def bucket_for(user_id: str, ts: datetime) -> TimeBucket:
         """Return the TimeBucket that timestamp ts falls into."""
         ts = _ensure_utc(ts)
         index = ts.hour // BUCKET_HOURS
@@ -84,7 +84,7 @@ class BucketBuilder:
         )
         end = start + timedelta(hours=BUCKET_HOURS)
         return TimeBucket(
-            patient_id=patient_id,
+            user_id=user_id,
             date=start.strftime("%Y-%m-%d"),
             index=index,
             start=start,
@@ -92,10 +92,10 @@ class BucketBuilder:
         )
 
     @staticmethod
-    def current_bucket(patient_id: str, now: Optional[datetime] = None) -> TimeBucket:
+    def current_bucket(user_id: str, now: Optional[datetime] = None) -> TimeBucket:
         """Return the bucket containing 'now' (defaults to current UTC)."""
         return BucketBuilder.bucket_for(
-            patient_id, now or datetime.now(timezone.utc)
+            user_id, now or datetime.now(timezone.utc)
         )
 
     @staticmethod
@@ -108,7 +108,7 @@ class BucketBuilder:
         """
         try:
             rest, label = bucket_id.rsplit("_", 1)
-            patient_id, date = rest.rsplit("_", 1)
+            user_id, date = rest.rsplit("_", 1)
             index = {v: k for k, v in _BUCKET_LABELS.items()}[label]
         except (ValueError, KeyError) as e:
             raise ValueError(f"Malformed bucket_id: {bucket_id!r}") from e
@@ -117,7 +117,7 @@ class BucketBuilder:
         start = start + timedelta(hours=index * BUCKET_HOURS)
         end = start + timedelta(hours=BUCKET_HOURS)
         return TimeBucket(
-            patient_id=patient_id, date=date, index=index, start=start, end=end
+            user_id=user_id, date=date, index=index, start=start, end=end
         )
 
 
@@ -149,7 +149,7 @@ class AgentData:
 
 
 @dataclass
-class PatientBucket:
+class UserBucket:
     """All available agent data for one patient in one 6h bucket (Option B).
 
     The caller assembles this. Agents with no data this bucket are simply
@@ -171,8 +171,8 @@ class PatientBucket:
     clinical_events: list = field(default_factory=list)
 
     @property
-    def patient_id(self) -> str:
-        return self.bucket.patient_id
+    def user_id(self) -> str:
+        return self.bucket.user_id
 
     @property
     def bucket_id(self) -> str:

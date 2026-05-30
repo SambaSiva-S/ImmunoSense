@@ -22,7 +22,7 @@ from immunosense.events import (
     BucketBuilder,
     EventLog,
     EventType,
-    PatientBucket,
+    UserBucket,
 )
 
 
@@ -80,7 +80,7 @@ def two_elevated(tmp_path):
     conductor = Conductor(registry=registry, event_log=log, disease="SLE")
     ts = datetime(2026, 5, 27, 14, 30, tzinfo=timezone.utc)
     bucket = BucketBuilder.bucket_for("patient001", ts)
-    pb = PatientBucket(bucket=bucket)
+    pb = UserBucket(bucket=bucket)
     pb.add(AgentData("agent5_symptoms_mood", "fake_summary", produced_at=ts))
     pb.add(AgentData(
         "agent4_wearable",
@@ -146,7 +146,7 @@ class TestFullPipelineElevated:
         import json
         conductor, log, pb, bucket = two_elevated
         report = conductor.evaluate_bucket(pb)
-        evt = [e for e in log.read_bucket(pb.patient_id, pb.bucket_id)
+        evt = [e for e in log.read_bucket(pb.user_id, pb.bucket_id)
                if e.event_type == EventType.BUCKET_EVAL][0]
         # Round-trips through JSON cleanly.
         s = json.dumps(evt.payload)
@@ -174,7 +174,7 @@ class TestFullPipelineGated:
         conductor = Conductor(registry=registry, event_log=log, disease="SLE")
         ts = datetime(2026, 5, 27, 14, 30, tzinfo=timezone.utc)
         bucket = BucketBuilder.bucket_for("p1", ts)
-        pb = PatientBucket(bucket=bucket)
+        pb = UserBucket(bucket=bucket)
         pb.add(AgentData("agent5_symptoms_mood", "s", produced_at=ts))
 
         report = conductor.evaluate_bucket(pb)

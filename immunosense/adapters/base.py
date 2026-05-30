@@ -5,7 +5,7 @@ The Sprint 5 audit established that every agent already returns the SAME
 ``confidence``. So adapters do NOT normalize outputs and do NOT redefine
 AgentOutput. Their job is narrow and uniform:
 
-    1. TRANSLATE a PatientBucket's AgentData into the agent's specific
+    1. TRANSLATE a UserBucket's AgentData into the agent's specific
        process() ``input_data`` shape (each agent wants a different dict).
     2. ISOLATE errors — wrap process() so a failure becomes a zero-confidence
        result plus an AGENT_ERROR event, never a crash that takes down the

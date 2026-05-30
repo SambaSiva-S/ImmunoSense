@@ -35,20 +35,20 @@ class TestLayoutContract:
         assert TOTAL_CONCAT_DIM == 87
 
     def test_layout_version_recorded(self):
-        pde = PatientDayEmbedding(patient_id="p", bucket_id="b")
+        pde = PatientDayEmbedding(user_id="p", bucket_id="b")
         assert pde.layout_version == EMBEDDING_LAYOUT_VERSION
 
 
 class TestAddAndConcat:
     def test_empty_concat_is_zero_vector(self):
-        pde = PatientDayEmbedding(patient_id="p", bucket_id="b")
+        pde = PatientDayEmbedding(user_id="p", bucket_id="b")
         v = pde.to_concat()
         assert v.shape == (TOTAL_CONCAT_DIM,)
         assert np.allclose(v, 0.0)
         assert pde.n_present == 0
 
     def test_single_agent_block_position(self):
-        pde = PatientDayEmbedding(patient_id="p", bucket_id="b")
+        pde = PatientDayEmbedding(user_id="p", bucket_id="b")
         # biomarker is the FIRST slot (dim 7).
         pde.add("agent1_biomarker", np.ones(7) * 0.5)
         v = pde.to_concat()
@@ -58,12 +58,12 @@ class TestAddAndConcat:
         assert np.allclose(v[7:], 0.0)
 
     def test_dim_mismatch_rejected_on_add(self):
-        pde = PatientDayEmbedding(patient_id="p", bucket_id="b")
+        pde = PatientDayEmbedding(user_id="p", bucket_id="b")
         with pytest.raises(ValueError):
             pde.add("agent1_biomarker", np.ones(5))  # wrong dim (7 expected)
 
     def test_presence_mask(self):
-        pde = PatientDayEmbedding(patient_id="p", bucket_id="b")
+        pde = PatientDayEmbedding(user_id="p", bucket_id="b")
         pde.add("agent1_biomarker", np.ones(7))
         pde.add("agent5_symptoms_mood", np.ones(36))
         mask = pde.presence_mask()
@@ -71,7 +71,7 @@ class TestAddAndConcat:
         assert mask.tolist() == [True, False, False, False, True]
 
     def test_full_concat_when_all_present(self):
-        pde = PatientDayEmbedding(patient_id="p", bucket_id="b")
+        pde = PatientDayEmbedding(user_id="p", bucket_id="b")
         pde.add("agent1_biomarker", np.full(7, 0.1))
         pde.add("agent2_dietary", np.full(10, 0.2))
         pde.add("agent3_environment", np.full(5, 0.3))

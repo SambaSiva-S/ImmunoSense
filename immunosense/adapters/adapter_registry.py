@@ -1,7 +1,7 @@
 """AdapterRegistry — the Conductor's directory of agent adapters.
 
 The Conductor doesn't know the five agents directly. It knows the registry:
-"here is a PatientBucket; for each agent that has data, hand me the adapter
+"here is a UserBucket; for each agent that has data, hand me the adapter
 that knows how to run it." The registry maps agent_id -> wrapped adapter and
 is the single place adapters are constructed.
 

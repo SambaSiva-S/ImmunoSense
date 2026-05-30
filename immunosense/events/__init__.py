@@ -8,7 +8,7 @@ from immunosense.events.bucket import (
     BUCKETS_PER_DAY,
     AgentData,
     BucketBuilder,
-    PatientBucket,
+    UserBucket,
     TimeBucket,
     freshness_weight,
 )
@@ -33,7 +33,7 @@ __all__ = [
     # bucket
     "TimeBucket",
     "BucketBuilder",
-    "PatientBucket",
+    "UserBucket",
     "AgentData",
     "freshness_weight",
     "BUCKET_HOURS",

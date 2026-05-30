@@ -1,4 +1,4 @@
-"""Tests for TimeBucket, BucketBuilder, PatientBucket, and freshness."""
+"""Tests for TimeBucket, BucketBuilder, UserBucket, and freshness."""
 
 from datetime import datetime, timedelta, timezone
 
@@ -8,7 +8,7 @@ from immunosense.events.bucket import (
     BUCKETS_PER_DAY,
     AgentData,
     BucketBuilder,
-    PatientBucket,
+    UserBucket,
     TimeBucket,
     freshness_weight,
 )
@@ -56,7 +56,7 @@ class TestBucketBuilder:
         ts = datetime(2026, 5, 27, 14, 30, tzinfo=timezone.utc)
         b = BucketBuilder.bucket_for("patient001", ts)
         rt = BucketBuilder.from_bucket_id(b.bucket_id)
-        assert rt.patient_id == "patient001"
+        assert rt.user_id == "patient001"
         assert rt.label == "T2"
         assert rt.start == b.start
         assert rt.end == b.end
@@ -65,7 +65,7 @@ class TestBucketBuilder:
         ts = datetime(2026, 5, 27, 8, 0, tzinfo=timezone.utc)
         b = BucketBuilder.bucket_for("patient_001_abc", ts)
         rt = BucketBuilder.from_bucket_id(b.bucket_id)
-        assert rt.patient_id == "patient_001_abc"
+        assert rt.user_id == "patient_001_abc"
         assert rt.label == "T1"
 
     def test_malformed_bucket_id_raises(self):
@@ -112,29 +112,29 @@ class TestFreshness:
         assert freshness_weight("daily", future, ref) == pytest.approx(1.0)
 
 
-class TestPatientBucket:
+class TestUserBucket:
     def _bucket(self):
         ts = datetime(2026, 5, 27, 14, 30, tzinfo=timezone.utc)
         return BucketBuilder.bucket_for("p1", ts)
 
     def test_add_and_get(self):
-        pb = PatientBucket(bucket=self._bucket())
+        pb = UserBucket(bucket=self._bucket())
         pb.add(AgentData(agent_id="agent1_biomarker", domain_object={"x": 1}))
         assert pb.has_agent("agent1_biomarker")
         assert pb.get("agent1_biomarker").domain_object == {"x": 1}
         assert pb.get("missing") is None
 
     def test_reporting_agents_sorted(self):
-        pb = PatientBucket(bucket=self._bucket())
+        pb = UserBucket(bucket=self._bucket())
         pb.add(AgentData(agent_id="agent5_symptoms_mood", domain_object=1))
         pb.add(AgentData(agent_id="agent1_biomarker", domain_object=2))
         assert pb.reporting_agents == ["agent1_biomarker", "agent5_symptoms_mood"]
 
     def test_patient_and_bucket_id_passthrough(self):
-        pb = PatientBucket(bucket=self._bucket())
-        assert pb.patient_id == "p1"
+        pb = UserBucket(bucket=self._bucket())
+        assert pb.user_id == "p1"
         assert pb.bucket_id == "p1_2026-05-27_T2"
 
     def test_flare_button_default_none(self):
-        pb = PatientBucket(bucket=self._bucket())
+        pb = UserBucket(bucket=self._bucket())
         assert pb.flare_button is None

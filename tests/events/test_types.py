@@ -45,12 +45,12 @@ class TestConfidenceLevel:
 class TestEvent:
     def test_create_defaults(self):
         ev = Event.create(
-            patient_id="p1",
+            user_id="p1",
             bucket_id="p1_2026-05-27_T2",
             event_type=EventType.AGENT_OUTPUT,
             payload={"x": 1},
         )
-        assert ev.patient_id == "p1"
+        assert ev.user_id == "p1"
         assert ev.event_type == EventType.AGENT_OUTPUT
         assert ev.schema_version == SCHEMA_VERSION
         assert ev.trace_id  # auto-generated
@@ -59,7 +59,7 @@ class TestEvent:
 
     def test_create_with_explicit_trace(self):
         ev = Event.create(
-            patient_id="p1",
+            user_id="p1",
             bucket_id="b",
             event_type=EventType.FLARE_BUTTON,
             payload={},
@@ -69,7 +69,7 @@ class TestEvent:
 
     def test_json_round_trip(self):
         ev = Event.create(
-            patient_id="p1",
+            user_id="p1",
             bucket_id="p1_2026-05-27_T2",
             event_type=EventType.AGENT_OUTPUT,
             payload={"vector": [0.1, 0.2], "alerts": []},

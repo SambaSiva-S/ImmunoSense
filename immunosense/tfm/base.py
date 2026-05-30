@@ -39,7 +39,7 @@ class TFMRequest:
     them read-only.
 
     Fields:
-        patient_id / bucket_id: identity for logging/trace.
+        user_id / bucket_id: identity for logging/trace.
         disease: the patient's condition (shapes the explanation context).
         flare_probability: Phase 1 posterior (None if gated).
         confidence_level: the Challenge 7 level string.
@@ -52,7 +52,7 @@ class TFMRequest:
         audience: "patient" or "clinician" — controls tone/detail.
     """
 
-    patient_id: str
+    user_id: str
     bucket_id: str
     disease: str
     flare_probability: Optional[float]

@@ -23,7 +23,7 @@ from immunosense.tfm import (
 def _request(prob=0.3, conf="moderate", patterns=None, signals=None,
              kb=None, audience="patient"):
     return TFMRequest(
-        patient_id="p1",
+        user_id="p1",
         bucket_id="p1_2026-05-27_T2",
         disease="SLE",
         flare_probability=prob,

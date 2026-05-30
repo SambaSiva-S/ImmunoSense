@@ -12,7 +12,7 @@ from immunosense.events import (
     BucketBuilder,
     EventLog,
     EventType,
-    PatientBucket,
+    UserBucket,
 )
 from immunosense.events.types import ConfidenceLevel
 
@@ -30,7 +30,7 @@ def setup(tmp_path, fake_biomarker, fake_symptoms):
 class TestConductorFlow:
     def test_both_agents_report(self, setup):
         conductor, log, bucket, ts = setup
-        pb = PatientBucket(bucket=bucket)
+        pb = UserBucket(bucket=bucket)
         pb.add(AgentData("agent1_biomarker",
                          {"demographics": {}, "reading": {}}, produced_at=ts))
         pb.add(AgentData("agent5_symptoms_mood", "summary", produced_at=ts))
@@ -47,7 +47,7 @@ class TestConductorFlow:
         # calls the TFM to explain the 'not enough data' state, and an
         # explanation is produced (via the default MockTFM).
         conductor, log, bucket, ts = setup
-        pb = PatientBucket(bucket=bucket)
+        pb = UserBucket(bucket=bucket)
         pb.add(AgentData("agent5_symptoms_mood", "summary", produced_at=ts))
         report = conductor.evaluate_bucket(pb)
         # Gated: insufficient confidence -> no probability/composite.
@@ -64,7 +64,7 @@ class TestConductorFlow:
 
     def test_one_agent_fails_other_continues(self, setup):
         conductor, log, bucket, ts = setup
-        pb = PatientBucket(bucket=bucket)
+        pb = UserBucket(bucket=bucket)
         # Biomarker gets garbage -> fails; symptoms is fine.
         pb.add(AgentData("agent1_biomarker", {"garbage": 1}, produced_at=ts))
         pb.add(AgentData("agent5_symptoms_mood", "summary", produced_at=ts))
@@ -78,7 +78,7 @@ class TestConductorFlow:
 
     def test_absent_agent_recorded(self, setup):
         conductor, log, bucket, ts = setup
-        pb = PatientBucket(bucket=bucket)
+        pb = UserBucket(bucket=bucket)
         # Only symptoms reports; biomarker is absent.
         pb.add(AgentData("agent5_symptoms_mood", "summary", produced_at=ts))
         report = conductor.evaluate_bucket(pb)
@@ -88,7 +88,7 @@ class TestConductorFlow:
 
     def test_layer_a_events_emitted(self, setup):
         conductor, log, bucket, ts = setup
-        pb = PatientBucket(bucket=bucket)
+        pb = UserBucket(bucket=bucket)
         pb.add(AgentData("agent1_biomarker",
                          {"demographics": {}, "reading": {}}, produced_at=ts))
         pb.add(AgentData("agent5_symptoms_mood", "summary", produced_at=ts))
@@ -101,7 +101,7 @@ class TestConductorFlow:
 
     def test_agent_error_event_on_failure(self, setup):
         conductor, log, bucket, ts = setup
-        pb = PatientBucket(bucket=bucket)
+        pb = UserBucket(bucket=bucket)
         pb.add(AgentData("agent1_biomarker", {"garbage": 1}, produced_at=ts))
         conductor.evaluate_bucket(pb)
         events = log.read_bucket("p1", bucket.bucket_id)
@@ -111,7 +111,7 @@ class TestConductorFlow:
 
     def test_all_events_share_trace_id(self, setup):
         conductor, log, bucket, ts = setup
-        pb = PatientBucket(bucket=bucket)
+        pb = UserBucket(bucket=bucket)
         pb.add(AgentData("agent5_symptoms_mood", "summary", produced_at=ts))
         report = conductor.evaluate_bucket(pb)
         events = log.read_bucket("p1", bucket.bucket_id)
@@ -122,7 +122,7 @@ class TestConductorFlow:
     def test_report_summary_serializable(self, setup):
         import json
         conductor, log, bucket, ts = setup
-        pb = PatientBucket(bucket=bucket)
+        pb = UserBucket(bucket=bucket)
         pb.add(AgentData("agent5_symptoms_mood", "summary", produced_at=ts))
         report = conductor.evaluate_bucket(pb)
         # summary() must be JSON-serializable (it's stored in a BUCKET_EVAL event).
@@ -132,7 +132,7 @@ class TestConductorFlow:
 class TestFlareButtonOverride:
     def test_flare_button_logs_and_reevaluates(self, setup):
         conductor, log, bucket, ts = setup
-        pb = PatientBucket(bucket=bucket)
+        pb = UserBucket(bucket=bucket)
         pb.add(AgentData("agent5_symptoms_mood", "summary", produced_at=ts))
 
         report = conductor.on_flare_button(pb, severity=0.9)
@@ -148,13 +148,13 @@ class TestFlareButtonOverride:
 class TestValidation:
     def test_invalid_flare_severity_raises(self, setup):
         conductor, log, bucket, ts = setup
-        pb = PatientBucket(bucket=bucket, flare_button=1.5)  # out of range
+        pb = UserBucket(bucket=bucket, flare_button=1.5)  # out of range
         with pytest.raises(BucketValidationError):
             conductor.evaluate_bucket(pb)
 
     def test_unregistered_agent_warns_not_fatal(self, setup):
         conductor, log, bucket, ts = setup
-        pb = PatientBucket(bucket=bucket)
+        pb = UserBucket(bucket=bucket)
         pb.add(AgentData("agent99_unknown", "data", produced_at=ts))
         # Should not raise; should warn and skip.
         report = conductor.evaluate_bucket(pb)

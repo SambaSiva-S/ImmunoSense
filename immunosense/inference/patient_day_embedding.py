@@ -58,14 +58,14 @@ class PatientDayEmbedding:
     """A patient's combined daily embedding state across agents.
 
     Fields:
-        patient_id / bucket_id: identity.
+        user_id / bucket_id: identity.
         embeddings: map agent_id -> 1D np.ndarray (native dim).
         present: set of agent_ids that contributed a real (non-zero-filled)
             embedding.
         layout_version: the concatenation layout contract version.
     """
 
-    patient_id: str
+    user_id: str
     bucket_id: str
     embeddings: dict = field(default_factory=dict)
     present: set = field(default_factory=set)
@@ -129,7 +129,7 @@ class PatientDayEmbedding:
 
 
 def build_patient_day_embedding(
-    patient_id: str,
+    user_id: str,
     bucket_id: str,
     agent_outputs: dict,
 ) -> PatientDayEmbedding:
@@ -141,7 +141,7 @@ def build_patient_day_embedding(
     with no corruption (their slot stays zero) — robustness over strictness at
     assembly time, while add() stays strict for explicit calls.
     """
-    pde = PatientDayEmbedding(patient_id=patient_id, bucket_id=bucket_id)
+    pde = PatientDayEmbedding(user_id=user_id, bucket_id=bucket_id)
     slot_dims = dict(_AGENT_SLOT_DIMS)
     for agent_id, output in agent_outputs.items():
         vec = getattr(output, "vector", None)

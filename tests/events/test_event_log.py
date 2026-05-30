@@ -17,7 +17,7 @@ def log(tmp_path):
 def _event(patient="p1", bucket="p1_2026-05-27_T2", etype=EventType.AGENT_OUTPUT,
            payload=None, agent_id=None, quality=0.5):
     return Event.create(
-        patient_id=patient,
+        user_id=patient,
         bucket_id=bucket,
         event_type=etype,
         payload=payload or {},
@@ -94,7 +94,7 @@ class TestEventLog:
         # An event whose timestamp is just after midnight but whose bucket_id
         # says the prior day should file under the bucket's date.
         ev = Event.create(
-            patient_id="p1",
+            user_id="p1",
             bucket_id="p1_2026-05-27_T3",
             event_type=EventType.AGENT_OUTPUT,
             payload={},

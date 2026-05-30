@@ -94,7 +94,7 @@ class Event:
 
     Fields:
         event_id: Unique UUID for this event.
-        patient_id: Which patient this event belongs to.
+        user_id: Which patient this event belongs to.
         timestamp: When the event occurred (UTC, ISO-8601 on disk).
         bucket_id: The 6h bucket this event falls in
             (e.g. "patient001_2026-05-27_T2"). See bucket.py.
@@ -111,7 +111,7 @@ class Event:
     """
 
     event_id: str
-    patient_id: str
+    user_id: str
     timestamp: datetime
     bucket_id: str
     event_type: EventType
@@ -126,7 +126,7 @@ class Event:
     # ------------------------------------------------------------------ #
     @staticmethod
     def create(
-        patient_id: str,
+        user_id: str,
         bucket_id: str,
         event_type: EventType,
         payload: dict,
@@ -142,7 +142,7 @@ class Event:
         """
         return Event(
             event_id=uuid.uuid4().hex,
-            patient_id=patient_id,
+            user_id=user_id,
             timestamp=timestamp or utc_now(),
             bucket_id=bucket_id,
             event_type=EventType(event_type),
@@ -160,7 +160,7 @@ class Event:
         """Convert to a JSON-serializable dict (timestamp -> ISO string)."""
         return {
             "event_id": self.event_id,
-            "patient_id": self.patient_id,
+            "user_id": self.user_id,
             "timestamp": self.timestamp.isoformat(),
             "bucket_id": self.bucket_id,
             "event_type": self.event_type.value,
@@ -182,7 +182,7 @@ class Event:
         timestamp = datetime.fromisoformat(ts) if isinstance(ts, str) else ts
         return Event(
             event_id=d["event_id"],
-            patient_id=d["patient_id"],
+            user_id=d["user_id"],
             timestamp=timestamp,
             bucket_id=d["bucket_id"],
             event_type=EventType(d["event_type"]),

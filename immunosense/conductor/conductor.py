@@ -1,7 +1,7 @@
 """The Conductor — hub-and-spoke orchestrator for ImmunoSense.
 
 Every 6 hours (or on a flare-button override) the Conductor evaluates one
-PatientBucket. The Sprint 5 flow:
+UserBucket. The Sprint 5 flow:
 
     1. Validate the bucket against the adapter registry.
     2. For each agent that has data, run it through its adapter
@@ -38,8 +38,8 @@ from immunosense.conductor.quality.confidence import (
 )
 from immunosense.conductor.quality.scorer import AgentQuality, QualityScorer
 from immunosense.conductor.utils.trace import TraceContext
-from immunosense.conductor.utils.validation import validate_patient_bucket
-from immunosense.events.bucket import PatientBucket
+from immunosense.conductor.utils.validation import validate_user_bucket
+from immunosense.events.bucket import UserBucket
 from immunosense.events.event_log import EventLog
 from immunosense.events.types import ConfidenceLevel, Event, EventType
 from immunosense.inference.patient_day_embedding import build_patient_day_embedding
@@ -57,7 +57,7 @@ class ConductorReport:
     and Sprint 7 respectively fill the stubs in.
     """
 
-    patient_id: str
+    user_id: str
     bucket_id: str
     evaluated_at: datetime
     trace_id: str
@@ -98,7 +98,7 @@ class ConductorReport:
     def summary(self) -> dict:
         """A compact, JSON-serializable summary for the BUCKET_EVAL event."""
         return {
-            "patient_id": self.patient_id,
+            "user_id": self.user_id,
             "bucket_id": self.bucket_id,
             "evaluated_at": self.evaluated_at.isoformat(),
             "confidence_level": self.confidence_level.value,
@@ -157,38 +157,38 @@ class Conductor:
     # ------------------------------------------------------------------ #
     # Main entrypoint
     # ------------------------------------------------------------------ #
-    def evaluate_bucket(self, patient_bucket: PatientBucket) -> ConductorReport:
+    def evaluate_bucket(self, user_bucket: UserBucket) -> ConductorReport:
         """Evaluate one bucket end-to-end. Synchronous; returns when done."""
-        ctx = TraceContext.for_bucket(patient_bucket.bucket_id)
-        bucket = patient_bucket.bucket
+        ctx = TraceContext.for_bucket(user_bucket.bucket_id)
+        bucket = user_bucket.bucket
         report = ConductorReport(
-            patient_id=patient_bucket.patient_id,
-            bucket_id=patient_bucket.bucket_id,
+            user_id=user_bucket.user_id,
+            bucket_id=user_bucket.bucket_id,
             evaluated_at=datetime.now(tz=bucket.end.tzinfo),
             trace_id=ctx.trace_id,
         )
 
         # 1. Validate
         report.warnings.extend(
-            validate_patient_bucket(patient_bucket, self.registry)
+            validate_user_bucket(user_bucket, self.registry)
         )
 
         # 2-3. Run each reporting agent through its adapter; score quality.
         qualities: list = []
-        for agent_id in patient_bucket.reporting_agents:
+        for agent_id in user_bucket.reporting_agents:
             adapter = self.registry.get(agent_id)
             if adapter is None:
                 # Already warned in validation; skip.
                 continue
 
-            agent_data = patient_bucket.get(agent_id)
+            agent_data = user_bucket.get(agent_id)
             result: AdapterResult = adapter.run(
                 agent_data, bucket_end=bucket.end, trace_id=ctx.trace_id
             )
             report.agent_results[agent_id] = result
 
             # Emit Layer A event (AGENT_OUTPUT or AGENT_ERROR).
-            ev = self._event_for_result(patient_bucket, result)
+            ev = self._event_for_result(user_bucket, result)
             self.event_log.append(ev)
             report.source_event_ids.append(ev.event_id)
             if not result.ok:
@@ -245,13 +245,13 @@ class Conductor:
             severity_composite=report.severity_composite,
             matched_patterns=report.matched_patterns,
             confidence_result=conf,
-            flare_button=patient_bucket.flare_button,
+            flare_button=user_bucket.flare_button,
             severity_band=report.severity_band,
         )
 
         # JEPA envelope (Challenge 5): assemble the combined daily embedding.
         pde = build_patient_day_embedding(
-            patient_bucket.patient_id, patient_bucket.bucket_id, outputs
+            user_bucket.user_id, user_bucket.bucket_id, outputs
         )
         report.embedding_concat_dim = len(pde.to_concat())
 
@@ -265,8 +265,8 @@ class Conductor:
                 )
             ]
             tfm_request = TFMRequest(
-                patient_id=patient_bucket.patient_id,
-                bucket_id=patient_bucket.bucket_id,
+                user_id=user_bucket.user_id,
+                bucket_id=user_bucket.bucket_id,
                 disease=self.disease,
                 flare_probability=report.flare_probability,
                 confidence_level=report.confidence_level.value,
@@ -287,8 +287,8 @@ class Conductor:
 
         # 6. Emit BUCKET_EVAL summary event.
         eval_ev = Event.create(
-            patient_id=patient_bucket.patient_id,
-            bucket_id=patient_bucket.bucket_id,
+            user_id=user_bucket.user_id,
+            bucket_id=user_bucket.bucket_id,
             event_type=EventType.BUCKET_EVAL,
             payload=report.summary(),
             quality=report.overall_quality,
@@ -303,7 +303,7 @@ class Conductor:
     # Critical-event override (Challenge 9)
     # ------------------------------------------------------------------ #
     def on_flare_button(
-        self, patient_bucket: PatientBucket, severity: float
+        self, user_bucket: UserBucket, severity: float
     ) -> ConductorReport:
         """Handle a flare-button press: log the event, then re-evaluate now.
 
@@ -311,10 +311,10 @@ class Conductor:
         event in Layer A first (so the override is auditable), then run a full
         bucket evaluation immediately.
         """
-        ctx = TraceContext.for_bucket(patient_bucket.bucket_id)
+        ctx = TraceContext.for_bucket(user_bucket.bucket_id)
         fb_event = Event.create(
-            patient_id=patient_bucket.patient_id,
-            bucket_id=patient_bucket.bucket_id,
+            user_id=user_bucket.user_id,
+            bucket_id=user_bucket.bucket_id,
             event_type=EventType.FLARE_BUTTON,
             payload={"severity": float(severity)},
             quality=1.0,
@@ -323,8 +323,8 @@ class Conductor:
         self.event_log.append(fb_event)
 
         # Make sure the bucket carries the flare button signal for downstream.
-        patient_bucket.flare_button = float(severity)
-        report = self.evaluate_bucket(patient_bucket)
+        user_bucket.flare_button = float(severity)
+        report = self.evaluate_bucket(user_bucket)
         report.source_event_ids.insert(0, fb_event.event_id)
         return report
 
@@ -332,7 +332,7 @@ class Conductor:
     # Helpers
     # ------------------------------------------------------------------ #
     def _event_for_result(
-        self, patient_bucket: PatientBucket, result: AdapterResult
+        self, user_bucket: UserBucket, result: AdapterResult
     ) -> Event:
         """Build the Layer A event for one agent result.
 
@@ -359,8 +359,8 @@ class Conductor:
             etype = EventType.AGENT_ERROR
 
         return Event.create(
-            patient_id=patient_bucket.patient_id,
-            bucket_id=patient_bucket.bucket_id,
+            user_id=user_bucket.user_id,
+            bucket_id=user_bucket.bucket_id,
             event_type=etype,
             payload=payload,
             agent_id=result.agent_id,
