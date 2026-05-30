@@ -1,8 +1,19 @@
-# ImmunoSense server data layer dependencies (Phase 1)
+# ImmunoSense server dependencies (Phase 1: data layer + builders + API)
 # Install into the project venv:
 #   venv\Scripts\python.exe -m pip install -r server\requirements.txt
 
+# Data layer
 SQLAlchemy>=2.0,<2.1
 alembic>=1.13
-psycopg2-binary>=2.9      # Postgres driver (Supabase). Use psycopg2 (not -binary) in prod if you compile.
-# FastAPI + auth deps will be added when the API layer (next step) is built.
+psycopg2-binary>=2.9      # Postgres driver (Supabase)
+
+# Builders (dietary reads NHANES .XPT via pandas)
+pandas>=2.0
+pyreadstat>=1.2           # .XPT (SAS transport) reader
+
+# API
+fastapi>=0.110
+uvicorn[standard]>=0.27
+pydantic>=2.0
+pyjwt[crypto]>=2.8        # Supabase JWT validation
+httpx>=0.27              # JWKS fetch + test client

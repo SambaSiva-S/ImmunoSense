@@ -1,0 +1,160 @@
+"""API endpoint tests — the full Phase 1 surface, dev-auth mode.
+
+Covers: health, auth enforcement, per-agent logging, evaluate (normal + flare),
+reports, history, profile/consent, photo URL, the confidence-aware framing, the
+tracelog (trace id propagation), and audit logging.
+"""
+
+from sqlalchemy import func, select
+
+from server.db.models import AccessLog, BucketReport, SymptomLog
+
+
+H = {"X-Dev-User": "u_test"}
+
+
+class TestHealthAndAuth:
+    def test_health_open(self, api_client):
+        r = api_client.get("/health")
+        assert r.status_code == 200
+        assert r.json()["status"] == "ok"
+
+    def test_auth_required(self, api_client):
+        # No X-Dev-User header -> 401
+        assert api_client.post("/v1/evaluate").status_code == 401
+        assert api_client.post("/v1/log/symptom", json={"fatigue": 5}).status_code == 401
+
+    def test_trace_id_returned(self, api_client):
+        r = api_client.get("/health")
+        assert "X-Trace-Id" in r.headers
+
+
+class TestLogging:
+    def test_log_symptom(self, api_client):
+        r = api_client.post("/v1/log/symptom", headers=H,
+                            json={"source": "tap", "fatigue": 7, "joint_pain": 6})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["ok"] is True
+        assert body["bucket_id"].startswith("u_test_")
+        assert body["trace_id"]
+
+    def test_log_symptom_persisted(self, api_client):
+        api_client.post("/v1/log/symptom", headers=H, json={"fatigue": 7})
+        with api_client._session_factory() as s:
+            n = s.execute(select(func.count()).select_from(SymptomLog)).scalar_one()
+        assert n == 1
+
+    def test_log_biomarker(self, api_client):
+        r = api_client.post("/v1/log/biomarker", headers=H, json={"crp": 9.2, "esr": 35})
+        assert r.status_code == 200
+
+    def test_log_meal(self, api_client):
+        r = api_client.post("/v1/log/meal", headers=H,
+                            json={"source": "text", "description": "chicken and rice"})
+        assert r.status_code == 200
+
+
+class TestEvaluation:
+    def test_evaluate_returns_report(self, api_client):
+        api_client.post("/v1/log/symptom", headers=H, json={"fatigue": 7, "joint_pain": 6})
+        r = api_client.post("/v1/evaluate", headers=H)
+        assert r.status_code == 200
+        body = r.json()
+        assert "confidence_level" in body
+        assert "display" in body
+        assert "status" in body
+
+    def test_insufficient_gates_number(self, api_client):
+        # Single symptom log -> low/insufficient -> no number shown
+        api_client.post("/v1/log/symptom", headers=H, json={"fatigue": 5})
+        body = api_client.post("/v1/evaluate", headers=H).json()
+        if body["status"] == "insufficient":
+            assert body["flare_probability"] is None
+            assert body["display"]["show_number"] is False
+            assert "keep logging" in body["display"]["headline"].lower() \
+                   or "not enough" in body["display"]["headline"].lower()
+
+    def test_flare_button_immediate_report(self, api_client):
+        api_client.post("/v1/log/symptom", headers=H, json={"fatigue": 8})
+        r = api_client.post("/v1/log/flare", headers=H, json={"severity": 0.9})
+        assert r.status_code == 200
+        # returns a report directly, not just an ack
+        assert "display" in r.json()
+        assert "confidence_level" in r.json()
+
+    def test_report_persisted_to_bucket_reports(self, api_client):
+        api_client.post("/v1/log/symptom", headers=H, json={"fatigue": 7})
+        api_client.post("/v1/evaluate", headers=H)
+        with api_client._session_factory() as s:
+            n = s.execute(select(func.count()).select_from(BucketReport)).scalar_one()
+        assert n == 1
+
+
+class TestReports:
+    def test_latest_404_when_empty(self, api_client):
+        assert api_client.get("/v1/report/latest", headers=H).status_code == 404
+
+    def test_latest_after_eval(self, api_client):
+        api_client.post("/v1/log/symptom", headers=H, json={"fatigue": 7})
+        api_client.post("/v1/evaluate", headers=H)
+        r = api_client.get("/v1/report/latest", headers=H)
+        assert r.status_code == 200
+        assert r.json()["bucket_id"].startswith("u_test_")
+
+    def test_history(self, api_client):
+        api_client.post("/v1/log/symptom", headers=H, json={"fatigue": 7})
+        api_client.post("/v1/evaluate", headers=H)
+        r = api_client.get("/v1/history", headers=H)
+        assert r.status_code == 200
+        assert len(r.json()["items"]) >= 1
+
+
+class TestProfileConsent:
+    def test_me_empty(self, api_client):
+        r = api_client.get("/v1/me", headers=H)
+        assert r.status_code == 200
+        assert r.json()["user_id"] == "u_test"
+
+    def test_set_and_read_consent(self, api_client):
+        api_client.put("/v1/me/consent", headers=H,
+                       json={"consent_type": "tfm_ai_processing", "granted": True})
+        consents = api_client.get("/v1/me", headers=H).json()["consents"]
+        assert consents["tfm_ai_processing"] is True
+
+    def test_revoke_consent(self, api_client):
+        api_client.put("/v1/me/consent", headers=H,
+                       json={"consent_type": "research_secondary_use", "granted": True})
+        api_client.put("/v1/me/consent", headers=H,
+                       json={"consent_type": "research_secondary_use", "granted": False})
+        consents = api_client.get("/v1/me", headers=H).json()["consents"]
+        assert consents["research_secondary_use"] is False
+
+
+class TestPhoto:
+    def test_photo_url_issued(self, api_client):
+        r = api_client.post("/v1/photo", headers=H, json={"content_type": "image/jpeg"})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["photo_id"]
+        assert body["upload_url"]
+        assert body["storage_key"].startswith("u_test/")
+
+
+class TestAuditAndTrace:
+    def test_writes_generate_audit(self, api_client):
+        api_client.post("/v1/log/symptom", headers=H, json={"fatigue": 7})
+        with api_client._session_factory() as s:
+            n = s.execute(select(func.count()).select_from(AccessLog)).scalar_one()
+        assert n >= 1
+
+    def test_user_isolation(self, api_client):
+        # Two users; each sees only their own data.
+        api_client.post("/v1/log/symptom", headers={"X-Dev-User": "u_a"}, json={"fatigue": 7})
+        api_client.post("/v1/evaluate", headers={"X-Dev-User": "u_a"})
+        api_client.post("/v1/log/symptom", headers={"X-Dev-User": "u_b"}, json={"fatigue": 3})
+        api_client.post("/v1/evaluate", headers={"X-Dev-User": "u_b"})
+        a = api_client.get("/v1/history", headers={"X-Dev-User": "u_a"}).json()["items"]
+        b = api_client.get("/v1/history", headers={"X-Dev-User": "u_b"}).json()["items"]
+        assert all(i["bucket_id"].startswith("u_a_") for i in a)
+        assert all(i["bucket_id"].startswith("u_b_") for i in b)

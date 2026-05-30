@@ -16,3 +16,4 @@ __pycache__/
 notebooks/data/nhanes/density.pkl
 notebooks/data/nhanes/food_index.pkl
 notebooks/data/nhanes/*.XPT
+token.txt

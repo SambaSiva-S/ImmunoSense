@@ -56,7 +56,7 @@ class User(Base):
     __tablename__ = "users"
     __table_args__ = {"schema": schema_for(SCHEMA_IDENTITY)}
 
-    user_id: Mapped[uuid.UUID] = mapped_column(GUID, primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     email: Mapped[str] = mapped_column(EncryptedString(320), unique=True)  # PHI
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -66,7 +66,7 @@ class Profile(Base):
     __tablename__ = "profiles"
     __table_args__ = {"schema": schema_for(SCHEMA_IDENTITY)}
 
-    user_id: Mapped[uuid.UUID] = mapped_column(GUID, primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     display_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     disease: Mapped[str | None] = mapped_column(String(64), nullable=True)  # "SLE", "RA"
     date_of_birth: Mapped[str | None] = mapped_column(EncryptedString(32), nullable=True)  # PHI
@@ -81,7 +81,7 @@ class Consent(Base):
     __table_args__ = {"schema": schema_for(SCHEMA_IDENTITY)}
 
     consent_id: Mapped[uuid.UUID] = mapped_column(GUID, primary_key=True, default=_uuid)
-    user_id: Mapped[uuid.UUID] = mapped_column(GUID, index=True)
+    user_id: Mapped[str] = mapped_column(String(128), index=True)
     consent_type: Mapped[str] = mapped_column(String(64))  # "tfm_ai_processing", "research_secondary_use"
     granted: Mapped[bool] = mapped_column(Boolean, default=False)
     granted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

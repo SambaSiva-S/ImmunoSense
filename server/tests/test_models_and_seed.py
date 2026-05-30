@@ -33,7 +33,7 @@ class TestSchemaCreation:
 
 class TestIdentitySeparation:
     def test_user_and_profile_keyed_by_user_id(self, session_factory):
-        uid = uuid.uuid4()
+        uid = str(uuid.uuid4())
         with session_factory() as s:
             s.add(User(user_id=uid, email="a@example.com"))
             s.add(Profile(user_id=uid, display_name="Test", disease="SLE"))
@@ -118,7 +118,7 @@ class TestSeeder:
 
 class TestConsent:
     def test_consent_record(self, session_factory):
-        uid = uuid.uuid4()
+        uid = str(uuid.uuid4())
         with session_factory() as s:
             s.add(Consent(user_id=uid, consent_type="tfm_ai_processing",
                           granted=True, granted_at=datetime.now(timezone.utc)))
