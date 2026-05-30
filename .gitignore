@@ -11,3 +11,8 @@ __pycache__/
 .coverage.*
 .mypy_cache/
 .ruff_cache/
+
+# NHANES caches and raw data (machine-built / large)
+notebooks/data/nhanes/density.pkl
+notebooks/data/nhanes/food_index.pkl
+notebooks/data/nhanes/*.XPT

@@ -1,0 +1,8 @@
+# ImmunoSense server data layer dependencies (Phase 1)
+# Install into the project venv:
+#   venv\Scripts\python.exe -m pip install -r server\requirements.txt
+
+SQLAlchemy>=2.0,<2.1
+alembic>=1.13
+psycopg2-binary>=2.9      # Postgres driver (Supabase). Use psycopg2 (not -binary) in prod if you compile.
+# FastAPI + auth deps will be added when the API layer (next step) is built.
