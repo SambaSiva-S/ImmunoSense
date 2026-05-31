@@ -8,9 +8,11 @@ Tests call it with an injected session_factory pointing at in-memory SQLite.
 from __future__ import annotations
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import sessionmaker
 
 from server.api.config import Settings, get_settings
+from server.api.hardening import RateLimitMiddleware, SecurityHeadersMiddleware
 from server.api.routes import router
 from server.api.service import EvaluationService
 from server.api.tracelog import TracelogMiddleware
@@ -26,7 +28,28 @@ def create_app(session_factory: sessionmaker | None = None,
         version="0.1.0",
         description="Phase 1 wellness API — log, evaluate, report.",
     )
+
+    # Middleware order: add inner-to-outer. Starlette runs the LAST-added first,
+    # so the final order per request is: RateLimit -> SecurityHeaders -> CORS ->
+    # Tracelog -> route handler.
     app.add_middleware(TracelogMiddleware)
+    origins = settings.cors_origin_list()
+    if origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=origins,          # strict allowlist (never "*")
+            allow_credentials=True,
+            allow_methods=["GET", "POST", "PUT", "OPTIONS"],
+            allow_headers=["Authorization", "Content-Type", "X-Dev-User", "X-Trace-Id"],
+            max_age=600,
+        )
+    app.add_middleware(SecurityHeadersMiddleware, enable_hsts=settings.enable_hsts)
+    app.add_middleware(
+        RateLimitMiddleware,
+        requests=settings.rate_limit_requests,
+        window_seconds=settings.rate_limit_window_seconds,
+        heavy_requests=settings.rate_limit_heavy_requests,
+    )
 
     # DB wiring
     if session_factory is None:

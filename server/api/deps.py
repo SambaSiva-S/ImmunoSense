@@ -12,8 +12,10 @@ from fastapi import Request
 from server.api.config import Settings, get_settings
 
 
-def get_settings_dep() -> Settings:
-    return get_settings()
+def get_settings_dep(request: Request) -> Settings:
+    """Prefer the app's injected settings (app.state), fall back to global env."""
+    state_settings = getattr(request.app.state, "settings", None)
+    return state_settings or get_settings()
 
 
 def get_session_factory(request: Request):

@@ -18,6 +18,7 @@ from functools import lru_cache
 from fastapi import Depends, Header, HTTPException, status
 
 from server.api.config import Settings, get_settings
+from server.api.deps import get_settings_dep
 
 
 class AuthError(HTTPException):
@@ -55,7 +56,7 @@ def _verify_supabase_jwt(token: str, settings: Settings) -> str:
 async def get_current_user_id(
     authorization: str | None = Header(default=None),
     x_dev_user: str | None = Header(default=None),
-    settings: Settings = Depends(get_settings),
+    settings: Settings = Depends(get_settings_dep),
 ) -> str:
     """FastAPI dependency: returns the authenticated user_id."""
     if settings.dev_auth:

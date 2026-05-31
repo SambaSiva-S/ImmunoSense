@@ -35,6 +35,24 @@ class Settings:
     # Disease default for new users without a profile disease set.
     default_disease: str = os.environ.get("DEFAULT_DISEASE", "SLE")
 
+    # --- API hardening ---
+    # CORS: comma-separated allowlist of front-end origins. Empty = no browser
+    # origin allowed (safe default; the API still works for non-browser clients).
+    # Example: CORS_ORIGINS="https://app.immunosense.com,http://localhost:5173"
+    cors_origins: str = os.environ.get("CORS_ORIGINS", "")
+
+    # Rate limiting: requests per window per client (IP + user). 0 disables.
+    rate_limit_requests: int = int(os.environ.get("RATE_LIMIT_REQUESTS", "120"))
+    rate_limit_window_seconds: int = int(os.environ.get("RATE_LIMIT_WINDOW", "60"))
+    # Tighter limit for expensive/sensitive endpoints (evaluate, flare, auth).
+    rate_limit_heavy_requests: int = int(os.environ.get("RATE_LIMIT_HEAVY_REQUESTS", "20"))
+
+    # Send HSTS header (only meaningful over HTTPS; safe to leave on in prod).
+    enable_hsts: bool = os.environ.get("ENABLE_HSTS", "1") == "1"
+
+    def cors_origin_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
 
 _settings: Settings | None = None
 
