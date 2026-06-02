@@ -19,3 +19,6 @@ notebooks/data/nhanes/*.XPT
 token.txt
 immunosense_dev.db
 *.db
+web/node_modules/
+web/dist/
+web/.env.local
