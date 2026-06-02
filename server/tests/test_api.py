@@ -158,3 +158,78 @@ class TestAuditAndTrace:
         b = api_client.get("/v1/history", headers={"X-Dev-User": "u_b"}).json()["items"]
         assert all(i["bucket_id"].startswith("u_a_") for i in a)
         assert all(i["bucket_id"].startswith("u_b_") for i in b)
+
+
+class TestDebugEndpoint:
+    def test_debug_404_when_disabled(self, api_client):
+        # api_client fixture uses default settings (debug disabled)
+        r = api_client.post("/v1/evaluate/debug", headers={"X-Dev-User": "u_test"})
+        assert r.status_code == 404
+
+    def test_debug_returns_agent_detail_when_enabled(self):
+        from sqlalchemy import create_engine
+        from sqlalchemy.pool import StaticPool
+        from sqlalchemy.orm import sessionmaker
+        from fastapi.testclient import TestClient
+        from server.db.base import Base
+        from server.db import models  # noqa
+        from server.api.app import create_app
+        from server.api.config import Settings
+        e = create_engine("sqlite://", connect_args={"check_same_thread": False},
+                          poolclass=StaticPool, future=True)
+        Base.metadata.create_all(e)
+        sf = sessionmaker(bind=e, expire_on_commit=False, future=True)
+        c = TestClient(create_app(session_factory=sf,
+                                  settings=Settings(dev_auth=True, enable_debug_endpoint=True)))
+        H = {"X-Dev-User": "u_dbg"}
+        c.post("/v1/log/symptom", headers=H, json={"fatigue": 7})
+        r = c.post("/v1/evaluate/debug", headers=H)
+        assert r.status_code == 200
+        d = r.json()
+        assert "agents" in d and "reporting_agents" in d
+        assert "fusion_contributions" in d
+        assert any(a["agent_id"] == "agent5_symptoms_mood" for a in d["agents"])
+
+
+class TestProfile:
+    def test_set_and_read_profile(self, api_client):
+        H = {"X-Dev-User": "u_prof"}
+        r = api_client.put("/v1/me/profile", headers=H,
+                           json={"disease": "RA", "timezone": "America/New_York"})
+        assert r.status_code == 200
+        assert r.json()["disease"] == "RA"
+        me = api_client.get("/v1/me", headers=H).json()
+        assert me["disease"] == "RA"
+
+    def test_partial_update_keeps_other_field(self, api_client):
+        H = {"X-Dev-User": "u_prof2"}
+        api_client.put("/v1/me/profile", headers=H, json={"disease": "SLE", "timezone": "UTC"})
+        api_client.put("/v1/me/profile", headers=H, json={"timezone": "Asia/Tokyo"})
+        me = api_client.get("/v1/me", headers=H).json()
+        assert me["disease"] == "SLE"  # unchanged by the tz-only update
+
+
+class TestBiomarkerBackfill:
+    def test_backfill_past_date_lands_in_historical_bucket(self, api_client):
+        H = {"X-Dev-User": "u_bf1"}
+        r = api_client.post("/v1/log/biomarker", headers=H,
+                            json={"crp": 8.2, "esr": 30, "measured_at": "2026-03-15"})
+        assert r.status_code == 200
+        assert "2026-03-15" in r.json()["bucket_id"]
+
+    def test_future_date_rejected(self, api_client):
+        H = {"X-Dev-User": "u_bf2"}
+        r = api_client.post("/v1/log/biomarker", headers=H,
+                            json={"crp": 5, "measured_at": "2099-01-01"})
+        assert r.status_code == 422
+
+    def test_bad_date_format_rejected(self, api_client):
+        H = {"X-Dev-User": "u_bf3"}
+        r = api_client.post("/v1/log/biomarker", headers=H,
+                            json={"crp": 5, "measured_at": "March 3"})
+        assert r.status_code == 422
+
+    def test_no_date_defaults_to_now(self, api_client):
+        H = {"X-Dev-User": "u_bf4"}
+        r = api_client.post("/v1/log/biomarker", headers=H, json={"crp": 6})
+        assert r.status_code == 200

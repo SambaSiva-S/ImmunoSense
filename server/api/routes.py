@@ -22,6 +22,7 @@ from server.api.schemas import (
     LogAck,
     MealLogIn,
     PhotoRequestIn,
+    ProfileIn,
     ReportOut,
     SymptomLogIn,
     report_to_out,
@@ -49,6 +50,27 @@ def _now():
 
 def _bucket_id(user_id: str, ts: datetime) -> str:
     return BucketBuilder.bucket_for(user_id, ts).bucket_id
+
+
+def _parse_backfill_date(date_str, fallback):
+    """Parse a 'YYYY-MM-DD' backfill date into a UTC datetime anchored at noon
+    (noon avoids timezone edges pushing it across a day boundary). Returns
+    `fallback` (usually now) when no date is given. Rejects future dates and
+    anything implausibly old (>5 years)."""
+    if not date_str:
+        return fallback
+    from fastapi import HTTPException
+    try:
+        y, m, d = (int(x) for x in str(date_str)[:10].split("-"))
+        dt = datetime(y, m, d, 12, 0, 0, tzinfo=timezone.utc)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=422, detail="measured_at must be YYYY-MM-DD")
+    now = datetime.now(timezone.utc)
+    if dt > now:
+        raise HTTPException(status_code=422, detail="measured_at cannot be in the future")
+    if (now - dt).days > 365 * 5:
+        raise HTTPException(status_code=422, detail="measured_at is too far in the past")
+    return dt
 
 
 def _audit(session, user_id, action, resource):
@@ -100,7 +122,7 @@ def log_meal(body: MealLogIn, user_id: str = Depends(get_current_user_id),
 @router.post("/log/biomarker", response_model=LogAck)
 def log_biomarker(body: BiomarkerLogIn, user_id: str = Depends(get_current_user_id),
                   sf=Depends(get_session_factory)):
-    ts = _now()
+    ts = _parse_backfill_date(body.measured_at, _now())
     bucket_id = _bucket_id(user_id, ts)
     reading_id = uuid.uuid4()
     with sf() as s:
@@ -138,6 +160,20 @@ def log_flare(body: FlareIn, user_id: str = Depends(get_current_user_id),
 def evaluate(user_id: str = Depends(get_current_user_id), svc=Depends(get_service)):
     report = svc.evaluate(user_id, _now())
     return report_to_out(report, get_trace_id())
+
+
+@router.post("/evaluate/debug")
+def evaluate_debug(user_id: str = Depends(get_current_user_id),
+                   svc=Depends(get_service), settings=Depends(get_settings_dep)):
+    """DEV-ONLY agent inspector. Returns the full agent-level detail the wellness
+    response hides. Requires authentication (your own data) AND the
+    ENABLE_DEBUG_ENDPOINT flag; returns 404 otherwise so it's never an
+    accidental production surface."""
+    from fastapi import HTTPException
+    if not settings.enable_debug_endpoint:
+        raise HTTPException(status_code=404, detail="Not found.")
+    report = svc.evaluate(user_id, _now())
+    return svc.debug_view(report)
 
 
 @router.get("/report/latest", response_model=ReportOut)
@@ -185,6 +221,33 @@ def me(user_id: str = Depends(get_current_user_id), sf=Depends(get_session_facto
         "consents": {c.consent_type: c.granted for c in consents},
         "trace_id": get_trace_id(),
     }
+
+
+@router.put("/me/profile")
+def set_profile(body: ProfileIn, user_id: str = Depends(get_current_user_id),
+                sf=Depends(get_session_factory)):
+    """Upsert the user's profile (condition + timezone). Used by onboarding."""
+    with sf() as s:
+        prof = s.execute(select(Profile).where(Profile.user_id == user_id)).scalar_one_or_none()
+        if prof is None:
+            prof = Profile(user_id=user_id)
+            s.add(prof)
+        if body.disease is not None:
+            prof.disease = body.disease
+        if body.timezone is not None:
+            prof.timezone = body.timezone
+        if body.sex is not None:
+            prof.sex = body.sex
+        if body.date_of_birth is not None:
+            prof.date_of_birth = body.date_of_birth
+        if body.height_cm is not None:
+            prof.height_cm = body.height_cm
+        if body.weight_kg is not None:
+            prof.weight_kg = body.weight_kg
+        _audit(s, user_id, "write", "identity.profiles")
+        s.commit()
+        disease, tz = prof.disease, prof.timezone
+    return {"ok": True, "disease": disease, "timezone": tz, "trace_id": get_trace_id()}
 
 
 @router.put("/me/consent")

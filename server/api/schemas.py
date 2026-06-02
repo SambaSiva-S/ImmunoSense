@@ -41,6 +41,7 @@ class BiomarkerLogIn(BaseModel):
     crp: Optional[float] = None
     esr: Optional[float] = None
     extra: dict = Field(default_factory=dict)  # other biomarker fields
+    measured_at: Optional[str] = None  # "YYYY-MM-DD" for backfilling past labs; defaults to now
 
 
 class FlareIn(BaseModel):
@@ -50,6 +51,15 @@ class FlareIn(BaseModel):
 class ConsentIn(BaseModel):
     consent_type: str
     granted: bool
+
+
+class ProfileIn(BaseModel):
+    disease: Optional[str] = None
+    timezone: Optional[str] = None
+    sex: Optional[int] = None              # 1=male, 2=female (NHANES coding)
+    date_of_birth: Optional[str] = None    # "YYYY-MM-DD"
+    height_cm: Optional[float] = None      # canonical; client converts from ft/in
+    weight_kg: Optional[float] = None      # canonical; client converts from lb
 
 
 class PhotoRequestIn(BaseModel):

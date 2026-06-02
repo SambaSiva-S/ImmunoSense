@@ -172,3 +172,31 @@ class TestDietaryBuilder:
             AgentData("agent2_dietary", rollup), bucket_end=datetime.now(timezone.utc))
         assert res.ok
         assert res.output.vector_dim == 10
+
+
+def test_symptom_confidence_scales_with_completeness():
+    """overall_confidence must rise as more symptom fields are provided
+    (regression guard for the quality=0.000 bug)."""
+    from types import SimpleNamespace
+    from server.builders import build_symptom_summary
+
+    def row(**kw):
+        base = dict(fatigue=None, joint_pain=None, brain_fog_severity=None, gi_distress=None,
+                    skin_severity=None, sleep_severity=None, energy_severity=None,
+                    wellness_severity=None, phq8_score=None, gad7_score=None,
+                    free_text=None, source="tap")
+        base.update(kw)
+        return SimpleNamespace(**base)
+
+    one = build_symptom_summary([row(fatigue=6.0)], "2026-05-31", "u1", "SLE")
+    four = build_symptom_summary(
+        [row(fatigue=6, joint_pain=5, sleep_severity=4, gi_distress=3)],
+        "2026-05-31", "u1", "SLE")
+    full = build_symptom_summary(
+        [row(fatigue=6, joint_pain=5, brain_fog_severity=4, gi_distress=3,
+             skin_severity=2, sleep_severity=5, energy_severity=4, wellness_severity=3)],
+        "2026-05-31", "u1", "SLE")
+
+    assert one.overall_confidence > 0.0          # not stuck at the default
+    assert one.overall_confidence < four.overall_confidence < full.overall_confidence
+    assert full.overall_confidence == 1.0

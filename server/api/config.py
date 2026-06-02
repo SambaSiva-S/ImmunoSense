@@ -50,6 +50,11 @@ class Settings:
     # Send HSTS header (only meaningful over HTTPS; safe to leave on in prod).
     enable_hsts: bool = os.environ.get("ENABLE_HSTS", "1") == "1"
 
+    # Dev-only agent inspector endpoint (/v1/evaluate/debug). Independent of
+    # dev_auth so you can run real JWT auth AND inspect agents while building.
+    # MUST be 0 in production — it exposes agent internals.
+    enable_debug_endpoint: bool = os.environ.get("ENABLE_DEBUG_ENDPOINT", "0") == "1"
+
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 

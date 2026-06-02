@@ -98,9 +98,15 @@ class EvaluationService:
             prof = s.execute(
                 select(Profile).where(Profile.user_id == user_id)
             ).scalar_one_or_none()
-        age = getattr(prof, "age", None) if prof else None
-        sex = getattr(prof, "sex", None) if prof else None
-        bmi = getattr(prof, "bmi", None) if prof else None
+        if prof is None:
+            log.warning(f"no profile for {user_id}; agents use default demographics")
+            return None, None, None
+        age = _age_from_dob(getattr(prof, "date_of_birth", None))
+        sex = getattr(prof, "sex", None)
+        bmi = _bmi(getattr(prof, "height_cm", None), getattr(prof, "weight_kg", None))
+        missing = [n for n, v in (("age", age), ("sex", sex), ("bmi", bmi)) if v is None]
+        if missing:
+            log.warning(f"{user_id} missing demographics {missing}; agents use defaults for those")
         return age, sex, bmi
 
     def build_user_bucket(self, user_id: str, ts: datetime, date: str) -> UserBucket:
@@ -140,11 +146,9 @@ class EvaluationService:
         # Biomarker (most recent reading)
         if bio_rows:
             latest = max(bio_rows, key=lambda r: r.measured_at)
-            with self.session_factory() as s:
-                prof = s.execute(
-                    select(Profile).where(Profile.user_id == user_id)
-                ).scalar_one_or_none()
-            bio_input = build_biomarker_input(latest, prof or _EmptyProfile())
+            age, sex, bmi = self._demographics(user_id)
+            demo = _Demographics(age=age, sex=sex, bmi=bmi)
+            bio_input = build_biomarker_input(latest, demo)
             ub.add(AgentData("agent1_biomarker", bio_input, produced_at=ts))
 
         # Dietary (only if caches are configured)
@@ -172,6 +176,60 @@ class EvaluationService:
             f"prob={report.flare_probability} conf={report.confidence_level.value}"
         )
         return report
+
+    @staticmethod
+    def debug_view(report) -> dict:
+        """Rich, builder-facing view of a ConductorReport — the agent internals
+        the wellness response intentionally hides. DEV ONLY (never exposed in
+        production responses). Surfaces what each agent contributed, quality,
+        fusion, and the raw inference numbers, so the builder can verify the
+        agents are reacting correctly.
+        """
+        agents = []
+        for agent_id in sorted(report.agent_results.keys()):
+            res = report.agent_results[agent_id]
+            q = report.agent_quality.get(agent_id)
+            out = getattr(res, "output", None)
+            agents.append({
+                "agent_id": agent_id,
+                "ok": getattr(res, "ok", None),
+                "error": getattr(res, "error", None),
+                "latency_ms": getattr(res, "latency_ms", None),
+                "vector_dim": getattr(out, "vector_dim", None) if out else None,
+                "confidence": getattr(out, "confidence", None) if out else None,
+                "alerts": list(getattr(out, "alerts", []) or []) if out else [],
+                "quality": None if q is None else {
+                    "raw_confidence": q.raw_confidence,
+                    "freshness": q.freshness,
+                    "quality": q.quality,
+                    "reported": q.reported,
+                    "ok": q.ok,
+                },
+            })
+        return {
+            "user_id": report.user_id,
+            "bucket_id": report.bucket_id,
+            "evaluated_at": report.evaluated_at.isoformat() if report.evaluated_at else None,
+            "trace_id": report.trace_id,
+            "reporting_agents": report.reporting_agents,
+            "agents": agents,
+            "confidence_level": report.confidence_level.value,
+            "overall_quality": report.overall_quality,
+            "flare_probability": report.flare_probability,
+            "severity_composite": report.severity_composite,
+            "severity_band": report.severity_band,
+            "matched_patterns": [
+                {"name": p.name, "label": p.label, "description": p.description}
+                for p in report.matched_patterns
+            ],
+            "fusion_contributions": list(report.fusion_contributions or []),
+            "embedding_concat_dim": report.embedding_concat_dim,
+            "calibration_version": report.calibration_version,
+            "tfm_ok": report.tfm_ok,
+            "explanation": report.explanation,
+            "warnings": list(report.warnings or []),
+            "errors": list(report.errors or []),
+        }
 
     def _persist_report(self, report) -> None:
         """Upsert the ConductorReport summary into health.bucket_reports.
@@ -224,7 +282,35 @@ class EvaluationService:
             s.commit()
 
 
-class _EmptyProfile:
-    age = None
-    sex = None
-    bmi = None
+class _Demographics:
+    """Carries computed demographics to the biomarker builder, which reads
+    .age / .sex / .bmi. Age is derived from date_of_birth and BMI from
+    height/weight upstream; this just exposes the results in the shape the
+    builder expects (it falls back to its own defaults for any None)."""
+    def __init__(self, age=None, sex=None, bmi=None):
+        self.age = age
+        self.sex = sex
+        self.bmi = bmi
+
+
+def _age_from_dob(dob: Optional[str]) -> Optional[float]:
+    """Compute age in years from a 'YYYY-MM-DD' date_of_birth string."""
+    if not dob:
+        return None
+    try:
+        from datetime import date
+        y, m, d = (int(x) for x in str(dob)[:10].split("-"))
+        today = date.today()
+        years = today.year - y - ((today.month, today.day) < (m, d))
+        return float(years) if 0 < years < 130 else None
+    except (ValueError, TypeError):
+        return None
+
+
+def _bmi(height_cm: Optional[float], weight_kg: Optional[float]) -> Optional[float]:
+    """BMI = kg / m^2. None unless both inputs are present and sane."""
+    if not height_cm or not weight_kg or height_cm <= 0:
+        return None
+    m = height_cm / 100.0
+    val = weight_kg / (m * m)
+    return round(val, 1) if 8 < val < 100 else None

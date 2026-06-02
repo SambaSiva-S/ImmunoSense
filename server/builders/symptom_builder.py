@@ -101,6 +101,19 @@ def build_symptom_summary(
         sources=sources,
         flare_button_pressed=bool(flare_button_pressed),
     )
+
+    # Confidence from data completeness: how many of the core symptom fields the
+    # user actually provided this day. Without this, overall_confidence stays at
+    # its 0.0 default and the agent reports zero quality regardless of input.
+    # A free-text mention or a pressed flare button also count as signal.
+    present = sum(1 for f in _SYMPTOM_FIELDS if agg[f] is not None)
+    mood_present = sum(1 for f in _MOOD_FIELDS if agg[f] is not None)
+    signal = present + mood_present + (1 if mentions else 0) + (1 if flare_button_pressed else 0)
+    # Saturating curve: a few fields already give decent confidence; full set ~1.0.
+    # 4+ meaningful signals -> ~0.8+, all 8 symptom fields -> ~1.0.
+    denom = len(_SYMPTOM_FIELDS)  # 8
+    summary.overall_confidence = round(min(1.0, signal / denom), 3)
+
     if explicit_flare_severity is not None:
         summary.flare_score = float(explicit_flare_severity)
     return summary

@@ -70,6 +70,11 @@ class Profile(Base):
     display_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     disease: Mapped[str | None] = mapped_column(String(64), nullable=True)  # "SLE", "RA"
     date_of_birth: Mapped[str | None] = mapped_column(EncryptedString(32), nullable=True)  # PHI
+    # Demographics the biomarker + dietary agents need for percentile baselines.
+    # Stored canonical (cm, kg); BMI is derived, never stored, so it can't drift.
+    sex: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 1=male, 2=female (NHANES coding)
+    height_cm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
     timezone: Mapped[str] = mapped_column(String(64), default="UTC")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
