@@ -130,3 +130,22 @@ class TestConfidenceAggregator:
         assert result.n_high == 1
         assert result.n_moderate == 1
         assert result.n_low == 1
+
+
+    def test_scales_to_active_agent_count_phase1(self):
+        # Phase 1 ships 3 active agents. Two of three at moderate quality should
+        # reach MODERATE (not be capped at LOW by a hardcoded "needs 3"). This
+        # guards the agent-count-scaling behavior.
+        qs = [self._q(0.6), self._q(0.6), self._q(0.2)]
+        assert self.agg.aggregate(qs).level == ConfidenceLevel.MODERATE
+
+    def test_dead_agents_do_not_dilute_strong_ones(self):
+        # Near-zero-quality reporters must not raise the bar for genuinely
+        # confident agents: 3 high + 2 dead still = HIGH.
+        qs = [self._q(0.8), self._q(0.8), self._q(0.8), self._q(0.1), self._q(0.0)]
+        assert self.agg.aggregate(qs).level == ConfidenceLevel.HIGH
+
+    def test_single_meaningful_signal_is_insufficient(self):
+        # Safety floor: one real signal can never alone produce confidence.
+        qs = [self._q(0.9), self._q(0.1), self._q(0.0)]
+        assert self.agg.aggregate(qs).level == ConfidenceLevel.INSUFFICIENT

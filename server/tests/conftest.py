@@ -14,9 +14,19 @@ sqlite URL here makes the whole test suite immune to ambient environment state.
 
 import os
 
-# Must run before server.db imports below.
+# Must run before server.db imports below. Neutralize ALL ambient API env vars
+# so the suite is immune to whatever a developer left set in their shell (e.g.
+# from running the live API). Every config flag with a test-relevant default is
+# forced/cleared here.
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 os.environ["DEV_AUTH"] = "1"
+os.environ.pop("ENABLE_DEBUG_ENDPOINT", None)  # default off; tests opt in explicitly
+os.environ.pop("CORS_ORIGINS", None)
+os.environ.pop("ENABLE_HSTS", None)
+os.environ.pop("USE_CLAUDE_TFM", None)
+os.environ.pop("DIETARY_DENSITY_CACHE", None)
+os.environ.pop("DIETARY_FOOD_INDEX_CACHE", None)
+os.environ.pop("SUPABASE_JWKS_URL", None)
 
 import pytest
 from sqlalchemy.orm import sessionmaker

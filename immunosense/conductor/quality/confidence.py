@@ -38,10 +38,32 @@ HIGH_BAND = 0.75
 MODERATE_BAND = 0.50
 LOW_BAND = 0.25
 
-# How many agents must clear a band for each overall level.
-HIGH_REQUIRES = 3       # >=3 agents high
-MODERATE_REQUIRES = 3   # >=3 agents at least moderate
-LOW_REQUIRES = 2        # >=2 agents at least low
+# Confidence requirements SCALE to the number of reporting agents, rather than
+# using absolute counts. The system was designed for ~5 agents but Phase 1 ships
+# with 3 active (biomarker, dietary, symptoms/mood); a hardcoded "needs 3" made
+# HIGH/MODERATE unreachable in practice and capped diligent users at LOW. Scaling
+# keeps the same intent — "most of the available agents are confident" — at any
+# agent count, while preserving a safety floor: at least 2 agents must agree for
+# any level above INSUFFICIENT (a single agent can never alone drive confidence).
+import math
+
+MIN_AGENTS_FOR_CONFIDENCE = 2  # absolute safety floor
+
+
+def _scaled_requirements(n_reporting: int) -> tuple[int, int, int]:
+    """Return (high_req, moderate_req, low_req) agent counts for n reporting
+    agents. HIGH ~ ceil(0.8*n) (nearly all), MODERATE ~ ceil(0.6*n) (a majority),
+    LOW ~ 2 (the floor). All clamped to >= the safety floor and <= n.
+
+    Worked examples:
+      n=2 -> high 2, moderate 2, low 2
+      n=3 -> high 3, moderate 2, low 2
+      n=5 -> high 4, moderate 3, low 2
+    """
+    high = max(MIN_AGENTS_FOR_CONFIDENCE, math.ceil(0.8 * n_reporting))
+    moderate = max(MIN_AGENTS_FOR_CONFIDENCE, math.ceil(0.6 * n_reporting))
+    low = MIN_AGENTS_FOR_CONFIDENCE
+    return min(high, n_reporting), min(moderate, n_reporting), min(low, n_reporting)
 
 
 @dataclass
@@ -73,21 +95,36 @@ class ConfidenceAggregator:
         qualities = list(qualities)
         reporting = [q for q in qualities if q.reported]
 
-        n_high = sum(1 for q in qualities if q.quality >= HIGH_BAND)
+        # Band counts over REPORTING agents only, so they're consistent with the
+        # reporting-count-scaled requirements below (a non-reporting agent must
+        # not count toward a band).
+        n_high = sum(1 for q in reporting if q.quality >= HIGH_BAND)
         n_moderate = sum(
-            1 for q in qualities if MODERATE_BAND <= q.quality < HIGH_BAND
+            1 for q in reporting if MODERATE_BAND <= q.quality < HIGH_BAND
         )
-        n_low = sum(1 for q in qualities if LOW_BAND <= q.quality < MODERATE_BAND)
+        n_low = sum(1 for q in reporting if LOW_BAND <= q.quality < MODERATE_BAND)
 
         # Cumulative counts for the threshold rule.
         at_least_moderate = n_high + n_moderate
         at_least_low = n_high + n_moderate + n_low
 
-        if n_high >= HIGH_REQUIRES:
+        # Requirements scale to how many agents contributed MEANINGFUL signal
+        # this bucket (quality at least the LOW band) — not raw reported count.
+        # A near-zero-quality agent that technically reported shouldn't raise the
+        # bar for genuinely-confident agents (otherwise two dead signals would
+        # penalize three strong ones). Floor still applies to the reporting set.
+        n_signal = n_high + n_moderate + n_low
+        high_req, moderate_req, low_req = _scaled_requirements(n_signal)
+
+        # Safety floor: never produce a positive confidence level from fewer than
+        # MIN_AGENTS_FOR_CONFIDENCE agents with meaningful signal.
+        if n_signal < MIN_AGENTS_FOR_CONFIDENCE:
+            level = ConfidenceLevel.INSUFFICIENT
+        elif n_high >= high_req:
             level = ConfidenceLevel.HIGH
-        elif at_least_moderate >= MODERATE_REQUIRES:
+        elif at_least_moderate >= moderate_req:
             level = ConfidenceLevel.MODERATE
-        elif at_least_low >= LOW_REQUIRES:
+        elif at_least_low >= low_req:
             level = ConfidenceLevel.LOW
         else:
             level = ConfidenceLevel.INSUFFICIENT
