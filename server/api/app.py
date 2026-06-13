@@ -60,6 +60,11 @@ def create_app(session_factory: sessionmaker | None = None,
         # In dev/SQLite, create tables if absent (prod uses Alembic migrations).
         if runtime_url.startswith("sqlite"):
             Base.metadata.create_all(engine)
+        # Install the connection-level RLS hook so EVERY transaction on this
+        # engine sets app.current_user_id from the request context (covers the
+        # service + conductor sessions, not just routes). No-op on SQLite.
+        from server.db.user_context import install_rls_hook
+        install_rls_hook(engine)
         session_factory = sessionmaker(bind=engine, expire_on_commit=False, future=True)
 
     app.state.settings = settings

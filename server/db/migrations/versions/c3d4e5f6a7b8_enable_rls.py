@@ -113,8 +113,15 @@ def downgrade() -> None:
         op.execute(f"ALTER TABLE {fq} NO FORCE ROW LEVEL SECURITY;")
         op.execute(f"ALTER TABLE {fq} DISABLE ROW LEVEL SECURITY;")
         op.execute(f"REVOKE ALL ON {fq} FROM {APP_ROLE};")
+    # Revoke default privileges we set on reference (else the role can't drop).
+    op.execute(
+        f'ALTER DEFAULT PRIVILEGES IN SCHEMA "reference" '
+        f'REVOKE SELECT ON TABLES FROM {APP_ROLE};'
+    )
+    op.execute(f'REVOKE SELECT ON ALL TABLES IN SCHEMA "reference" FROM {APP_ROLE};')
     for schema in ("identity", "health", "reference", "audit"):
         op.execute(f'REVOKE USAGE ON SCHEMA "{schema}" FROM {APP_ROLE};')
-    op.execute(f'REVOKE SELECT ON ALL TABLES IN SCHEMA "reference" FROM {APP_ROLE};')
-    # Drop the role last (after privileges revoked).
+    # Belt-and-suspenders: clear any remaining dependencies before dropping the
+    # role (this is what made the first downgrade attempt fail).
+    op.execute(f"DROP OWNED BY {APP_ROLE} CASCADE;")
     op.execute(f"DROP ROLE IF EXISTS {APP_ROLE};")

@@ -58,13 +58,22 @@ async def get_current_user_id(
     x_dev_user: str | None = Header(default=None),
     settings: Settings = Depends(get_settings_dep),
 ) -> str:
-    """FastAPI dependency: returns the authenticated user_id."""
+    """FastAPI dependency: returns the authenticated user_id.
+
+    Also sets the request-scoped current-user context so the RLS engine hook
+    applies app.current_user_id to ALL sessions in this request (routes, the
+    EvaluationService, and the conductor's event log), not just route sessions.
+    """
+    from server.db.user_context import set_current_user
     if settings.dev_auth:
         if not x_dev_user:
             raise AuthError("Dev auth on: supply X-Dev-User header.")
+        set_current_user(x_dev_user)
         return x_dev_user
 
     if not authorization or not authorization.lower().startswith("bearer "):
         raise AuthError("Missing Bearer token.")
     token = authorization.split(" ", 1)[1].strip()
-    return _verify_supabase_jwt(token, settings)
+    uid = _verify_supabase_jwt(token, settings)
+    set_current_user(uid)
+    return uid
