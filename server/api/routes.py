@@ -295,13 +295,101 @@ def photo_upload_url(body: PhotoRequestIn, user_id: str = Depends(get_current_us
     if settings.dev_auth:
         upload_url = f"https://dev.local/upload/{storage_key}"  # stub for dev/tests
     else:
-        # PRODUCTION: issue a real Supabase Storage signed upload URL here.
-        # (Requires the Supabase service key + storage client; documented in
-        # the README. EXIF stripping happens in the storage edge function.)
-        upload_url = f"<supabase-signed-url-for:{storage_key}>"
+        upload_url = _supabase_signed_upload_url(settings, storage_key)
 
     return {"photo_id": str(photo_id), "upload_url": upload_url,
             "storage_key": storage_key, "trace_id": get_trace_id()}
+
+
+@router.get("/photo/{photo_id}")
+def photo_view_url(photo_id: str, user_id: str = Depends(get_current_user_id),
+                   sf=Depends(get_session_factory), settings=Depends(get_settings_dep)):
+    """Return a short-lived signed URL to VIEW a photo the user owns.
+
+    Authorization: the photo row must belong to the authenticated user — a user
+    can never get a URL for someone else's photo (enforced by the user_id filter
+    in the query). Photos remain record-only; this just lets the owner see their
+    own image back."""
+    from fastapi import HTTPException
+    with sf() as s:
+        row = s.execute(
+            select(Photo).where(Photo.photo_id == uuid.UUID(photo_id),
+                                Photo.user_id == user_id)
+        ).scalar_one_or_none()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Photo not found.")
+        _audit(s, user_id, "read", "health.photos")
+        s.commit()
+        storage_key = row.storage_key
+
+    if settings.dev_auth:
+        return {"view_url": f"https://dev.local/view/{storage_key}", "trace_id": get_trace_id()}
+    return {"view_url": _supabase_signed_view_url(settings, storage_key),
+            "trace_id": get_trace_id()}
+
+
+def _supabase_signed_view_url(settings, storage_key: str, expires_in: int = 3600) -> str:
+    """Mint a short-lived signed DOWNLOAD url for a private-bucket object."""
+    from fastapi import HTTPException
+    import httpx
+    if not settings.supabase_url or not settings.supabase_service_role_key:
+        raise HTTPException(status_code=503, detail="Photo storage is not configured.")
+    base = settings.supabase_url.rstrip("/")
+    bucket = settings.supabase_storage_bucket
+    endpoint = f"{base}/storage/v1/object/sign/{bucket}/{storage_key}"
+    try:
+        resp = httpx.post(
+            endpoint,
+            headers={"Authorization": f"Bearer {settings.supabase_service_role_key.strip()}",
+                     "Content-Type": "application/json"},
+            json={"expiresIn": expires_in},
+            timeout=10.0,
+        )
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"Storage service unreachable: {e}")
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"Could not sign view URL ({resp.status_code}).")
+    signed = resp.json().get("signedURL") or resp.json().get("signedUrl", "")
+    return f"{base}/storage/v1{signed}"
+
+
+def _supabase_signed_upload_url(settings, storage_key: str) -> str:
+    """Mint a Supabase Storage signed UPLOAD url for a private bucket.
+
+    Calls the storage REST API with the service role key (server-side secret).
+    Returns a fully-qualified URL the client PUTs the file bytes to — the bytes
+    never transit our API. Photos are record-only; no AI reads them.
+    """
+    from fastapi import HTTPException
+    import httpx
+
+    if not settings.supabase_url or not settings.supabase_service_role_key:
+        # Misconfiguration: fail clearly rather than returning a broken URL.
+        raise HTTPException(
+            status_code=503,
+            detail="Photo storage is not configured (missing SUPABASE_URL or service role key).",
+        )
+    base = settings.supabase_url.rstrip("/")
+    bucket = settings.supabase_storage_bucket
+    endpoint = f"{base}/storage/v1/object/upload/sign/{bucket}/{storage_key}"
+    try:
+        resp = httpx.post(
+            endpoint,
+            headers={
+                "Authorization": f"Bearer {settings.supabase_service_role_key.strip()}",
+                "Content-Type": "application/json",
+            },
+            json={},  # Supabase storage rejects an empty body when content-type is JSON
+            timeout=10.0,
+        )
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"Storage service unreachable: {e}")
+    if resp.status_code not in (200, 201):
+        raise HTTPException(status_code=502,
+                            detail=f"Could not create upload URL ({resp.status_code}).")
+    # Supabase returns {"url": "/object/upload/sign/<bucket>/<key>?token=..."}.
+    token_path = resp.json().get("url", "")
+    return f"{base}/storage/v1{token_path}"
 
 
 # --------------------------------------------------------------------------- #

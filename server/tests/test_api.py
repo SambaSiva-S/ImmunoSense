@@ -233,3 +233,54 @@ class TestBiomarkerBackfill:
         H = {"X-Dev-User": "u_bf4"}
         r = api_client.post("/v1/log/biomarker", headers=H, json={"crp": 6})
         assert r.status_code == 200
+
+
+class TestPhotoProduction:
+    def test_photo_503_when_storage_unconfigured(self):
+        # In production mode (dev_auth off) with no Supabase storage config,
+        # the endpoint must fail clearly with 503, not return a broken URL.
+        from sqlalchemy import create_engine
+        from sqlalchemy.pool import StaticPool
+        from sqlalchemy.orm import sessionmaker
+        from fastapi.testclient import TestClient
+        from server.db.base import Base
+        from server.db import models  # noqa
+        from server.api.app import create_app
+        from server.api.config import Settings
+        e = create_engine("sqlite://", connect_args={"check_same_thread": False},
+                          poolclass=StaticPool, future=True)
+        Base.metadata.create_all(e)
+        sf = sessionmaker(bind=e, expire_on_commit=False, future=True)
+        # dev_auth False but no supabase_url/service key -> 503. Use a dev token
+        # path by setting dev_auth True for AUTH but simulating prod storage?
+        # Simpler: dev_auth must be False to hit the prod branch; supply a fake
+        # bearer via X-Dev-User won't work when dev_auth False. So we test the
+        # helper-guard directly via a prod-config app with auth bypass off is not
+        # feasible here; instead assert the helper raises.
+        from server.api.routes import _supabase_signed_upload_url
+        import pytest
+        from fastapi import HTTPException
+        s = Settings(dev_auth=False, supabase_url=None, supabase_service_role_key=None)
+        with pytest.raises(HTTPException) as ei:
+            _supabase_signed_upload_url(s, "u/2026-06-02/x.jpg")
+        assert ei.value.status_code == 503
+
+
+class TestPhotoView:
+    def test_view_own_photo_dev(self, api_client):
+        H = {"X-Dev-User": "u_pv"}
+        # create a photo via the upload endpoint (dev stub)
+        up = api_client.post("/v1/photo", headers=H, json={"content_type": "image/jpeg"}).json()
+        pid = up["photo_id"]
+        r = api_client.get(f"/v1/photo/{pid}", headers=H)
+        assert r.status_code == 200
+        assert "view_url" in r.json()
+
+    def test_cannot_view_others_photo(self, api_client):
+        A = {"X-Dev-User": "u_pa"}
+        B = {"X-Dev-User": "u_pb"}
+        up = api_client.post("/v1/photo", headers=A, json={"content_type": "image/jpeg"}).json()
+        pid = up["photo_id"]
+        # B tries to view A's photo -> 404 (never leaks another user's photo)
+        r = api_client.get(f"/v1/photo/{pid}", headers=B)
+        assert r.status_code == 404

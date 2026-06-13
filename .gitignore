@@ -22,3 +22,5 @@ immunosense_dev.db
 web/node_modules/
 web/dist/
 web/.env.local
+env.local.bat
+env.local.bat

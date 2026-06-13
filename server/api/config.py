@@ -22,6 +22,13 @@ class Settings:
     supabase_jwks_url: str | None = os.environ.get("SUPABASE_JWKS_URL")
     supabase_jwt_audience: str = os.environ.get("SUPABASE_JWT_AUD", "authenticated")
 
+    # Supabase Storage (meal photos). The service role key is a SECRET — set it
+    # via env only, never commit it. Used server-side to mint signed upload URLs
+    # against a private bucket. Photos are record-only (no AI reads them).
+    supabase_url: str | None = os.environ.get("SUPABASE_URL")
+    supabase_service_role_key: str | None = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+    supabase_storage_bucket: str = os.environ.get("SUPABASE_STORAGE_BUCKET", "meal-photos")
+
     # Dietary NHANES cache paths (built once via build_dietary_caches.py).
     # If unset, the dietary log endpoint still stores the raw meal, but
     # evaluation will skip dietary rollup (logged as a warning, not an error).

@@ -50,6 +50,15 @@ export const api = {
   logMeal: (body: MealLogIn) =>
     request<LogAck>("/v1/log/meal", { method: "POST", body: JSON.stringify(body) }),
 
+  photoUploadUrl: (content_type = "image/jpeg") =>
+    request<{ photo_id: string; upload_url: string; storage_key: string }>("/v1/photo", {
+      method: "POST",
+      body: JSON.stringify({ content_type }),
+    }),
+
+  photoViewUrl: (photoId: string) =>
+    request<{ view_url: string }>(`/v1/photo/${photoId}`),
+
   evaluate: () => request<ReportOut>("/v1/evaluate", { method: "POST" }),
 
   evaluateDebug: () => request<DebugView>("/v1/evaluate/debug", { method: "POST" }),
