@@ -284,3 +284,25 @@ class TestPhotoView:
         # B tries to view A's photo -> 404 (never leaks another user's photo)
         r = api_client.get(f"/v1/photo/{pid}", headers=B)
         assert r.status_code == 404
+
+
+class TestPhotoList:
+    def test_list_photos_returns_own_photos(self, api_client):
+        H = {"X-Dev-User": "u_list"}
+        # create two photos
+        api_client.post("/v1/photo", headers=H, json={"content_type": "image/jpeg"})
+        api_client.post("/v1/photo", headers=H, json={"content_type": "image/jpeg"})
+        r = api_client.get("/v1/photos", headers=H)
+        assert r.status_code == 200
+        items = r.json()["items"]
+        assert len(items) == 2
+        assert all("view_url" in i and "uploaded_at" in i for i in items)
+
+    def test_list_photos_is_user_scoped(self, api_client):
+        A = {"X-Dev-User": "u_la"}
+        B = {"X-Dev-User": "u_lb"}
+        api_client.post("/v1/photo", headers=A, json={"content_type": "image/jpeg"})
+        # B lists -> should NOT see A's photo
+        r = api_client.get("/v1/photos", headers=B)
+        assert r.status_code == 200
+        assert r.json()["items"] == []

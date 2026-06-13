@@ -4,6 +4,7 @@ import { confidenceLabel, type ReportOut } from "../lib/types";
 
 export function History({ onBack }: { onBack: () => void }) {
   const [items, setItems] = useState<ReportOut[] | null>(null);
+  const [photos, setPhotos] = useState<{ photo_id: string; uploaded_at: string | null; view_url: string | null }[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -13,6 +14,8 @@ export function History({ onBack }: { onBack: () => void }) {
       .catch((e) => {
         setError(e instanceof ApiError ? `(${e.status}) ${e.message}` : "Couldn't reach the server.");
       });
+    // photos are best-effort — a failure here shouldn't break History
+    api.listPhotos(30).then((r) => setPhotos(r.items)).catch(() => setPhotos([]));
   }, []);
 
   if (error) {
@@ -71,6 +74,35 @@ export function History({ onBack }: { onBack: () => void }) {
             ))}
           </div>
         </>
+      )}
+
+      {photos.length > 0 && (
+        <div style={{ marginTop: 22 }}>
+          <div className="trend-head" style={{ marginBottom: 10 }}>
+            <span>Your meal photos</span>
+            <span className="band">{photos.length}</span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+            {photos.map((p) => (
+              <div key={p.photo_id} style={{ aspectRatio: "1", borderRadius: 12, overflow: "hidden",
+                                              background: "var(--sage-wash)" }}>
+                {p.view_url ? (
+                  <img src={p.view_url} alt="meal"
+                       style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                       loading="lazy" />
+                ) : (
+                  <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center",
+                                justifyContent: "center", fontSize: 11, color: "var(--ink-soft)" }}>
+                    unavailable
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+          <div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 8, fontStyle: "italic" }}>
+            For your own record — photos aren't analyzed.
+          </div>
+        </div>
       )}
 
       <div className="disclaimer">

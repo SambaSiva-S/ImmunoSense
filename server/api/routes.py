@@ -302,6 +302,40 @@ def photo_upload_url(body: PhotoRequestIn, user_id: str = Depends(get_current_us
             "storage_key": storage_key, "trace_id": get_trace_id()}
 
 
+@router.get("/photos")
+def list_photos(user_id: str = Depends(get_current_user_id),
+                sf=Depends(get_session_factory), settings=Depends(get_settings_dep),
+                limit: int = 30):
+    """List the user's photos (newest first) with a signed view URL for each.
+
+    Powers the History photo timeline. Owner-scoped by the user_id filter (and
+    RLS enforces it at the DB level too). Skips soft-deleted photos.
+    """
+    with user_session(sf, user_id) as s:
+        rows = s.execute(
+            select(Photo).where(Photo.user_id == user_id, Photo.is_deleted == False)  # noqa: E712
+            .order_by(Photo.uploaded_at.desc())
+            .limit(min(limit, 100))
+        ).scalars().all()
+        _audit(s, user_id, "read", "health.photos")
+        s.commit()
+        items = [(str(r.photo_id), r.uploaded_at.isoformat() if r.uploaded_at else None,
+                  r.storage_key) for r in rows]
+
+    out = []
+    for photo_id, uploaded_at, storage_key in items:
+        if settings.dev_auth:
+            view_url = f"https://dev.local/view/{storage_key}"
+        else:
+            try:
+                view_url = _supabase_signed_view_url(settings, storage_key)
+            except Exception:
+                view_url = None  # one bad photo shouldn't break the whole list
+        out.append({"photo_id": photo_id, "uploaded_at": uploaded_at, "view_url": view_url})
+
+    return {"items": out, "trace_id": get_trace_id()}
+
+
 @router.get("/photo/{photo_id}")
 def photo_view_url(photo_id: str, user_id: str = Depends(get_current_user_id),
                    sf=Depends(get_session_factory), settings=Depends(get_settings_dep)):

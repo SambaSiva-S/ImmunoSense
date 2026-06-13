@@ -59,6 +59,11 @@ export const api = {
   photoViewUrl: (photoId: string) =>
     request<{ view_url: string }>(`/v1/photo/${photoId}`),
 
+  listPhotos: (limit = 30) =>
+    request<{ items: { photo_id: string; uploaded_at: string | null; view_url: string | null }[] }>(
+      `/v1/photos?limit=${limit}`
+    ),
+
   evaluate: () => request<ReportOut>("/v1/evaluate", { method: "POST" }),
 
   evaluateDebug: () => request<DebugView>("/v1/evaluate/debug", { method: "POST" }),
