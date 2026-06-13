@@ -28,6 +28,7 @@ from server.api.schemas import (
     report_to_out,
 )
 from server.api.tracelog import get_trace_id, log
+from server.db.user_context import user_session
 from server.db.models import (
     AccessLog,
     BiomarkerReading,
@@ -88,7 +89,7 @@ def log_symptom(body: SymptomLogIn, user_id: str = Depends(get_current_user_id),
     ts = _now()
     bucket_id = _bucket_id(user_id, ts)
     log_id = uuid.uuid4()
-    with sf() as s:
+    with user_session(sf, user_id) as s:
         s.add(SymptomLog(
             log_id=log_id, user_id=user_id, bucket_id=bucket_id, logged_at=ts,
             source=body.source, fatigue=body.fatigue, joint_pain=body.joint_pain,
@@ -108,7 +109,7 @@ def log_meal(body: MealLogIn, user_id: str = Depends(get_current_user_id),
     ts = _now()
     bucket_id = _bucket_id(user_id, ts)
     log_id = uuid.uuid4()
-    with sf() as s:
+    with user_session(sf, user_id) as s:
         s.add(DietaryLog(
             log_id=log_id, user_id=user_id, bucket_id=bucket_id, meal_at=ts,
             source=body.source, description=body.description,
@@ -125,7 +126,7 @@ def log_biomarker(body: BiomarkerLogIn, user_id: str = Depends(get_current_user_
     ts = _parse_backfill_date(body.measured_at, _now())
     bucket_id = _bucket_id(user_id, ts)
     reading_id = uuid.uuid4()
-    with sf() as s:
+    with user_session(sf, user_id) as s:
         s.add(BiomarkerReading(
             reading_id=reading_id, user_id=user_id, measured_at=ts,
             crp=body.crp, esr=body.esr, payload=body.extra or {},
@@ -143,7 +144,7 @@ def log_flare(body: FlareIn, user_id: str = Depends(get_current_user_id),
               sf=Depends(get_session_factory), svc=Depends(get_service)):
     ts = _now()
     bucket_id = _bucket_id(user_id, ts)
-    with sf() as s:
+    with user_session(sf, user_id) as s:
         s.add(FlareButtonEvent(user_id=user_id, pressed_at=ts,
                                severity=body.severity, bucket_id=bucket_id))
         _audit(s, user_id, "write", "health.flare_button_events")
@@ -180,7 +181,7 @@ def evaluate_debug(user_id: str = Depends(get_current_user_id),
 def report_latest(user_id: str = Depends(get_current_user_id),
                   sf=Depends(get_session_factory)):
     from fastapi import HTTPException
-    with sf() as s:
+    with user_session(sf, user_id) as s:
         row = s.execute(
             select(BucketReport).where(BucketReport.user_id == user_id)
             .order_by(BucketReport.evaluated_at.desc())
@@ -195,7 +196,7 @@ def report_latest(user_id: str = Depends(get_current_user_id),
 @router.get("/history")
 def history(user_id: str = Depends(get_current_user_id),
             sf=Depends(get_session_factory), limit: int = 30, offset: int = 0):
-    with sf() as s:
+    with user_session(sf, user_id) as s:
         rows = s.execute(
             select(BucketReport).where(BucketReport.user_id == user_id)
             .order_by(BucketReport.evaluated_at.desc())
@@ -212,7 +213,7 @@ def history(user_id: str = Depends(get_current_user_id),
 # --------------------------------------------------------------------------- #
 @router.get("/me")
 def me(user_id: str = Depends(get_current_user_id), sf=Depends(get_session_factory)):
-    with sf() as s:
+    with user_session(sf, user_id) as s:
         prof = s.execute(select(Profile).where(Profile.user_id == user_id)).scalar_one_or_none()
         consents = s.execute(select(Consent).where(Consent.user_id == user_id)).scalars().all()
     return {
@@ -227,7 +228,7 @@ def me(user_id: str = Depends(get_current_user_id), sf=Depends(get_session_facto
 def set_profile(body: ProfileIn, user_id: str = Depends(get_current_user_id),
                 sf=Depends(get_session_factory)):
     """Upsert the user's profile (condition + timezone). Used by onboarding."""
-    with sf() as s:
+    with user_session(sf, user_id) as s:
         prof = s.execute(select(Profile).where(Profile.user_id == user_id)).scalar_one_or_none()
         if prof is None:
             prof = Profile(user_id=user_id)
@@ -253,7 +254,7 @@ def set_profile(body: ProfileIn, user_id: str = Depends(get_current_user_id),
 @router.put("/me/consent")
 def set_consent(body: ConsentIn, user_id: str = Depends(get_current_user_id),
                 sf=Depends(get_session_factory)):
-    with sf() as s:
+    with user_session(sf, user_id) as s:
         existing = s.execute(
             select(Consent).where(Consent.user_id == user_id)
             .where(Consent.consent_type == body.consent_type)
@@ -286,7 +287,7 @@ def photo_upload_url(body: PhotoRequestIn, user_id: str = Depends(get_current_us
     """
     photo_id = uuid.uuid4()
     storage_key = f"{user_id}/{datetime.now().strftime('%Y-%m-%d')}/{photo_id}.jpg"
-    with sf() as s:
+    with user_session(sf, user_id) as s:
         s.add(Photo(photo_id=photo_id, user_id=user_id, storage_key=storage_key,
                     content_type=body.content_type))
         _audit(s, user_id, "write", "health.photos")
@@ -311,7 +312,7 @@ def photo_view_url(photo_id: str, user_id: str = Depends(get_current_user_id),
     in the query). Photos remain record-only; this just lets the owner see their
     own image back."""
     from fastapi import HTTPException
-    with sf() as s:
+    with user_session(sf, user_id) as s:
         row = s.execute(
             select(Photo).where(Photo.photo_id == uuid.UUID(photo_id),
                                 Photo.user_id == user_id)
