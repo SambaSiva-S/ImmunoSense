@@ -15,6 +15,11 @@ from dataclasses import dataclass
 class Settings:
     # Database
     database_url: str = os.environ.get("DATABASE_URL", "sqlite:///immunosense_dev.db")
+    # Runtime connection for the API. If set, the app connects as the restricted
+    # `immunosense_app` role (RLS-enforced) instead of the migration/superuser
+    # DATABASE_URL. Migrations always use DATABASE_URL (needs role/DDL privileges);
+    # the running app uses this. Falls back to database_url if unset (dev/tests).
+    app_database_url: str = os.environ.get("APP_DATABASE_URL", "")
 
     # Auth — when dev_auth is on, an X-Dev-User header stands in for a real JWT.
     # PRODUCTION MUST set DEV_AUTH=0 and provide SUPABASE_JWKS_URL.

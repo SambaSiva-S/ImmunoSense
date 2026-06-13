@@ -71,8 +71,14 @@ def upgrade() -> None:
     for schema in ("identity", "health", "reference", "audit"):
         op.execute(f'GRANT USAGE ON SCHEMA "{schema}" TO {APP_ROLE};')
 
-    # reference.* is shared read-only lookup data
+    # reference.* is shared read-only lookup data. Grant on existing tables AND
+    # set default privileges so any reference table added by a FUTURE migration
+    # is automatically readable by the app role (avoids a silent breakage later).
     op.execute(f'GRANT SELECT ON ALL TABLES IN SCHEMA "reference" TO {APP_ROLE};')
+    op.execute(
+        f'ALTER DEFAULT PRIVILEGES IN SCHEMA "reference" '
+        f'GRANT SELECT ON TABLES TO {APP_ROLE};'
+    )
 
     # 3. per-table: grant DML, enable + force RLS, add the per-user policy
     for schema, table in USER_TABLES:

@@ -53,9 +53,12 @@ def create_app(session_factory: sessionmaker | None = None,
 
     # DB wiring
     if session_factory is None:
-        engine = make_engine(settings.database_url)
+        # Prefer the restricted runtime role (RLS-enforced) when configured;
+        # fall back to the migration/superuser URL for dev/tests.
+        runtime_url = settings.app_database_url or settings.database_url
+        engine = make_engine(runtime_url)
         # In dev/SQLite, create tables if absent (prod uses Alembic migrations).
-        if settings.database_url.startswith("sqlite"):
+        if runtime_url.startswith("sqlite"):
             Base.metadata.create_all(engine)
         session_factory = sessionmaker(bind=engine, expire_on_commit=False, future=True)
 
