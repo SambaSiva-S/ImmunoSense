@@ -23,10 +23,12 @@ from immunosense.adapters import (
     AdapterRegistry,
     BiomarkerAdapter,
     DietaryAdapter,
+    EnvironmentAdapter,
     SymptomsMoodAdapter,
 )
 from immunosense.agents.biomarker.agent import BiomarkerAgent
 from immunosense.agents.dietary.agent import DietaryAgent
+from immunosense.agents.environment.agent import EnvironmentAgent
 from immunosense.agents.symptoms_mood.agent import SymptomsMoodAgent
 from immunosense.conductor import Conductor
 from immunosense.events import AgentData, BucketBuilder, UserBucket
@@ -72,6 +74,9 @@ class EvaluationService:
         registry.register(SymptomsMoodAdapter(SymptomsMoodAgent()))
         registry.register(BiomarkerAdapter(BiomarkerAgent()))
         registry.register(DietaryAdapter(DietaryAgent()))
+        # Environment (Agent 3): fed from the user's home location when set.
+        # CompositeSource uses real APIs when keys are configured, mock otherwise.
+        registry.register(EnvironmentAdapter(EnvironmentAgent()))
 
         tfm = None
         if self.settings.use_claude_tfm:
@@ -160,6 +165,25 @@ class EvaluationService:
             ub.add(AgentData("agent2_dietary", rollup, produced_at=ts))
         elif meal_rows:
             log.info("Meals present but dietary caches not configured; skipping dietary.")
+
+        # Environment (Agent 3): only if the user has set a home location.
+        # Best-effort — a data-source failure must never break the check-in.
+        try:
+            with self.session_factory() as s:
+                prof = s.execute(
+                    select(Profile).where(Profile.user_id == user_id)
+                ).scalar_one_or_none()
+            home_lat = getattr(prof, "home_lat", None) if prof else None
+            home_lng = getattr(prof, "home_lng", None) if prof else None
+            if home_lat is not None and home_lng is not None:
+                from server.builders.environment_builder import build_environment_summary
+                env_summary = build_environment_summary(
+                    lat=float(home_lat), lon=float(home_lng), target_date=date,
+                    label=getattr(prof, "home_label", None),
+                )
+                ub.add(AgentData("agent3_environment", env_summary, produced_at=ts))
+        except Exception as exc:  # noqa: BLE001
+            log.warning(f"environment agent skipped for {user_id}: {exc}")
 
         return ub
 

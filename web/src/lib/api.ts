@@ -77,7 +77,11 @@ export const api = {
     request<{ items: ReportOut[]; trace_id: string }>(`/v1/history?limit=${limit}`),
 
   me: () =>
-    request<{ user_id: string; disease: string | null; consents: Record<string, boolean> }>("/v1/me"),
+    request<{
+      user_id: string; disease: string | null; timezone: string | null;
+      home_lat: number | null; home_lng: number | null; home_label: string | null;
+      consents: Record<string, boolean>;
+    }>("/v1/me"),
 
   setConsent: (consent_type: string, granted: boolean) =>
     request<{ ok: boolean; consent_type: string; granted: boolean }>("/v1/me/consent", {
@@ -88,12 +92,17 @@ export const api = {
   setProfile: (p: {
     disease?: string | null;
     timezone?: string | null;
+    home_query?: string | null;
     sex?: number | null;
     date_of_birth?: string | null;
     height_cm?: number | null;
     weight_kg?: number | null;
   }) =>
-    request<{ ok: boolean; disease: string | null; timezone: string | null }>("/v1/me/profile", {
+    request<{
+      ok: boolean; disease: string | null; timezone: string | null;
+      home_label: string | null; home_lat: number | null; home_lng: number | null;
+      geocode_error?: string;
+    }>("/v1/me/profile", {
       method: "PUT",
       body: JSON.stringify(p),
     }),
