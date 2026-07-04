@@ -56,6 +56,10 @@ class ConsentIn(BaseModel):
 class ProfileIn(BaseModel):
     disease: Optional[str] = None
     timezone: Optional[str] = None
+    home_query: Optional[str] = None       # user enters a city or US zip; server geocodes it
+    home_lat: Optional[float] = None       # or set coordinates directly (e.g. mobile GPS)
+    home_lng: Optional[float] = None
+    home_label: Optional[str] = None       # human-readable, e.g. "Charlotte, NC"
     sex: Optional[int] = None              # 1=male, 2=female (NHANES coding)
     date_of_birth: Optional[str] = None    # "YYYY-MM-DD"
     height_cm: Optional[float] = None      # canonical; client converts from ft/in

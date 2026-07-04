@@ -306,3 +306,62 @@ class TestPhotoList:
         r = api_client.get("/v1/photos", headers=B)
         assert r.status_code == 200
         assert r.json()["items"] == []
+
+
+class TestHomeLocation:
+    def test_set_and_read_home_location(self, api_client):
+        H = {"X-Dev-User": "u_loc"}
+        r = api_client.put("/v1/me/profile", headers=H, json={
+            "home_lat": 35.2271, "home_lng": -80.8431, "home_label": "Charlotte, NC"
+        })
+        assert r.status_code == 200
+        me = api_client.get("/v1/me", headers=H).json()
+        assert me["home_lat"] == 35.2271
+        assert me["home_lng"] == -80.8431
+        assert me["home_label"] == "Charlotte, NC"
+
+    def test_location_is_user_scoped(self, api_client):
+        api_client.put("/v1/me/profile", headers={"X-Dev-User": "u_l1"},
+                       json={"home_lat": 40.0, "home_lng": -70.0, "home_label": "A"})
+        me2 = api_client.get("/v1/me", headers={"X-Dev-User": "u_l2"}).json()
+        assert me2["home_lat"] is None  # u_l2 has no location of their own
+
+    def test_partial_update_preserves_other_fields(self, api_client):
+        H = {"X-Dev-User": "u_loc2"}
+        api_client.put("/v1/me/profile", headers=H, json={"disease": "RA"})
+        api_client.put("/v1/me/profile", headers=H,
+                       json={"home_lat": 1.0, "home_lng": 2.0, "home_label": "X"})
+        me = api_client.get("/v1/me", headers=H).json()
+        assert me["disease"] == "RA"          # not clobbered by the location update
+        assert me["home_label"] == "X"
+
+
+class TestGeocodeLocation:
+    def test_home_query_geocodes_and_stores(self, api_client, monkeypatch):
+        # mock the geocoder so the test doesn't hit the network
+        import server.api.routes as routes_mod
+        monkeypatch.setattr("server.api.geocode.geocode",
+                            lambda q, **k: (35.2271, -80.8431, "Charlotte, NC 28202"))
+        H = {"X-Dev-User": "u_geo"}
+        r = api_client.put("/v1/me/profile", headers=H, json={"home_query": "28202"})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["home_lat"] == 35.2271
+        assert body["home_label"] == "Charlotte, NC 28202"
+        assert "geocode_error" not in body
+        me = api_client.get("/v1/me", headers=H).json()
+        assert me["home_lat"] == 35.2271
+
+    def test_bad_location_returns_error_not_crash(self, api_client, monkeypatch):
+        monkeypatch.setattr("server.api.geocode.geocode", lambda q, **k: None)
+        H = {"X-Dev-User": "u_geo2"}
+        r = api_client.put("/v1/me/profile", headers=H, json={"home_query": "zznowhere"})
+        assert r.status_code == 200          # profile save still succeeds
+        assert "geocode_error" in r.json()   # but signals the lookup failed
+
+    def test_direct_coordinates_still_work(self, api_client):
+        H = {"X-Dev-User": "u_geo3"}
+        r = api_client.put("/v1/me/profile", headers=H,
+                           json={"home_lat": 40.0, "home_lng": -73.0, "home_label": "NYC"})
+        assert r.status_code == 200
+        assert api_client.get("/v1/me", headers=H).json()["home_lat"] == 40.0

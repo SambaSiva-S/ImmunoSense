@@ -76,6 +76,11 @@ class Profile(Base):
     height_cm: Mapped[float | None] = mapped_column(Float, nullable=True)
     weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
     timezone: Mapped[str] = mapped_column(String(64), default="UTC")
+    # Home location for the Environment agent (air quality, pollen, etc.).
+    # Coordinates drive the data-source lookups; label is a human-readable place.
+    home_lat: Mapped[float | None] = mapped_column(Float, nullable=True)
+    home_lng: Mapped[float | None] = mapped_column(Float, nullable=True)
+    home_label: Mapped[str | None] = mapped_column(String(120), nullable=True)  # "Charlotte, NC"
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 

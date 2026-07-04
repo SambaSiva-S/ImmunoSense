@@ -219,6 +219,10 @@ def me(user_id: str = Depends(get_current_user_id), sf=Depends(get_session_facto
     return {
         "user_id": user_id,
         "disease": getattr(prof, "disease", None) if prof else None,
+        "timezone": getattr(prof, "timezone", None) if prof else None,
+        "home_lat": getattr(prof, "home_lat", None) if prof else None,
+        "home_lng": getattr(prof, "home_lng", None) if prof else None,
+        "home_label": getattr(prof, "home_label", None) if prof else None,
         "consents": {c.consent_type: c.granted for c in consents},
         "trace_id": get_trace_id(),
     }
@@ -245,10 +249,38 @@ def set_profile(body: ProfileIn, user_id: str = Depends(get_current_user_id),
             prof.height_cm = body.height_cm
         if body.weight_kg is not None:
             prof.weight_kg = body.weight_kg
+        if body.home_query is not None and body.home_query.strip():
+            # User entered a city or zip — geocode to coordinates the agent needs.
+            from server.api.geocode import geocode
+            resolved = geocode(body.home_query)
+            if resolved is not None:
+                lat, lng, label = resolved
+                prof.home_lat = lat
+                prof.home_lng = lng
+                prof.home_label = label
+            # If geocoding fails (bad input or network), we leave location unchanged
+            # and signal it in the response rather than erroring the whole profile save.
+            geocode_ok = resolved is not None
+        else:
+            geocode_ok = None
+        # Direct coordinates (e.g. from mobile GPS) still supported and take precedence.
+        if body.home_lat is not None:
+            prof.home_lat = body.home_lat
+        if body.home_lng is not None:
+            prof.home_lng = body.home_lng
+        if body.home_label is not None:
+            prof.home_label = body.home_label
         _audit(s, user_id, "write", "identity.profiles")
         s.commit()
         disease, tz = prof.disease, prof.timezone
-    return {"ok": True, "disease": disease, "timezone": tz, "trace_id": get_trace_id()}
+        home_label, home_lat, home_lng = prof.home_label, prof.home_lat, prof.home_lng
+    resp = {"ok": True, "disease": disease, "timezone": tz,
+            "home_label": home_label, "home_lat": home_lat, "home_lng": home_lng,
+            "trace_id": get_trace_id()}
+    if geocode_ok is False:
+        # We couldn't resolve the city/zip the user typed; tell the UI so it can prompt.
+        resp["geocode_error"] = "Could not find that location. Try a city name or US zip."
+    return resp
 
 
 @router.put("/me/consent")
