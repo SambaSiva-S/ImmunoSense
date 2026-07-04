@@ -64,6 +64,17 @@ export const api = {
       `/v1/photos?limit=${limit}`
     ),
 
+  checkDestination: (location: string) =>
+    request<{
+      location?: string; headline?: string; note?: string;
+      readings?: Record<string, number | null>;
+      elevated?: string[]; data_confidence?: number;
+      disclaimer?: string; error?: string;
+    }>("/v1/environment/check", {
+      method: "POST",
+      body: JSON.stringify({ location }),
+    }),
+
   evaluate: () => request<ReportOut>("/v1/evaluate", { method: "POST" }),
 
   evaluateDebug: () => request<DebugView>("/v1/evaluate/debug", { method: "POST" }),

@@ -36,3 +36,30 @@ class TestEnvironmentBuilder:
         res = adapter.run(ad, datetime.now(timezone.utc), new_trace_id())
         assert res.ok
         assert res.agent_id == "agent3_environment"
+
+
+class TestDestinationCheck:
+    def test_check_returns_assessment(self, api_client, monkeypatch):
+        # mock geocode so the test doesn't hit the network
+        monkeypatch.setattr("server.api.geocode.geocode",
+                            lambda q, **k: (35.227, -80.843, "Charlotte, NC 28202"))
+        r = api_client.post("/v1/environment/check", headers={"X-Dev-User": "u_dest"},
+                            json={"location": "28202"})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["location"] == "Charlotte, NC 28202"
+        assert "readings" in body and "pollen" in body["readings"]
+        assert "headline" in body and "disclaimer" in body
+
+    def test_check_bad_location(self, api_client, monkeypatch):
+        monkeypatch.setattr("server.api.geocode.geocode", lambda q, **k: None)
+        r = api_client.post("/v1/environment/check", headers={"X-Dev-User": "u_dest2"},
+                            json={"location": "zznowhere"})
+        assert r.status_code == 200
+        assert "error" in r.json()
+
+    def test_check_empty_location(self, api_client):
+        r = api_client.post("/v1/environment/check", headers={"X-Dev-User": "u_dest3"},
+                            json={"location": ""})
+        assert r.status_code == 200
+        assert "error" in r.json()

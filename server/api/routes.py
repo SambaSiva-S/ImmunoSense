@@ -177,6 +177,67 @@ def evaluate_debug(user_id: str = Depends(get_current_user_id),
     return svc.debug_view(report)
 
 
+@router.post("/environment/check")
+def environment_check(body: dict, user_id: str = Depends(get_current_user_id),
+                      settings=Depends(get_settings_dep)):
+    """On-demand environmental assessment for ANY location (Phase 3).
+
+    The "check a destination" brain: geocode a city/zip, pull air quality +
+    pollen (+ UV, pressure) for it, and return a calm, wellness-framed summary.
+    Reuses the Phase 2 builder. This same endpoint later powers mobile travel
+    alerts. Not diagnostic — an environmental heads-up, not a medical prediction.
+    """
+    query = (body.get("location") or "").strip()
+    if not query:
+        return {"error": "Please provide a location (city or zip)."}
+
+    from server.api.geocode import geocode
+    resolved = geocode(query)
+    if resolved is None:
+        return {"error": "Could not find that location. Try a city name or US zip."}
+    lat, lng, label = resolved
+
+    from datetime import date as _date
+    from server.builders.environment_builder import build_environment_summary
+    try:
+        summary = build_environment_summary(
+            lat=lat, lon=lng, target_date=_date.today().isoformat(), label=label,
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning(f"environment check failed for {label}: {exc}")
+        return {"error": "Couldn't retrieve environmental data for that location right now."}
+
+    # Build a calm, user-facing readout. Surface the raw feature values + any
+    # threshold breaches; frame gently (wellness heads-up, not a medical verdict).
+    breaches = [f for f, a in summary.threshold_alerts.items()
+                if a in {"unhealthy_sensitive", "unhealthy", "very_unhealthy",
+                         "hazardous", "high", "very_high", "extreme"}]
+    if breaches:
+        headline = "Some elevated conditions"
+        note = ("A few environmental factors here are on the higher side today. "
+                "If you're sensitive to them, it may be worth keeping in mind.")
+    else:
+        headline = "Looks calm"
+        note = "Environmental conditions here look unremarkable today."
+
+    return {
+        "location": label,
+        "headline": headline,
+        "note": note,
+        "readings": {
+            "air_quality_pm25": summary.pm25_ug_m3,
+            "ozone": summary.ozone_ppb,
+            "pollen": summary.pollen_index,
+            "uv_index": summary.uv_index,
+            "pressure_change": summary.barometric_change_kpa,
+        },
+        "elevated": breaches,
+        "data_confidence": summary.overall_confidence,  # 0 = all mock, 1 = all real
+        "disclaimer": "Environmental heads-up, not medical advice.",
+        "trace_id": get_trace_id(),
+    }
+
+
 @router.get("/report/latest", response_model=ReportOut)
 def report_latest(user_id: str = Depends(get_current_user_id),
                   sf=Depends(get_session_factory)):

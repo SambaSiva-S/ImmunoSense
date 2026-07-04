@@ -28,6 +28,11 @@ export function Settings({ onBack, email }: { onBack: () => void; email: string 
   const [locSaving, setLocSaving] = useState(false);
   const [locMsg, setLocMsg] = useState<string | null>(null);
 
+  // Check a destination (Phase 3)
+  const [destInput, setDestInput] = useState("");
+  const [destBusy, setDestBusy] = useState(false);
+  const [destResult, setDestResult] = useState<Awaited<ReturnType<typeof api.checkDestination>> | null>(null);
+
   useEffect(() => {
     api
       .me()
@@ -58,6 +63,20 @@ export function Settings({ onBack, email }: { onBack: () => void; email: string 
       setLocMsg("Couldn't save that location.");
     } finally {
       setLocSaving(false);
+    }
+  }
+
+  async function checkDestination() {
+    const q = destInput.trim();
+    if (!q) return;
+    setDestBusy(true);
+    setDestResult(null);
+    try {
+      setDestResult(await api.checkDestination(q));
+    } catch {
+      setDestResult({ error: "Couldn't check that destination right now." });
+    } finally {
+      setDestBusy(false);
     }
   }
 
@@ -132,6 +151,59 @@ export function Settings({ onBack, email }: { onBack: () => void; email: string 
           </div>
 
           <div style={{ marginTop: 22 }}>
+            <div className="step-label" style={{ fontSize: 18 }}>Check a destination</div>
+            <div style={{ fontSize: 12.5, color: "var(--ink-soft)", margin: "4px 0 12px", lineHeight: 1.45 }}>
+              Traveling? See what the air and pollen look like somewhere before you go.
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                value={destInput}
+                onChange={(e) => setDestInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") checkDestination(); }}
+                placeholder="City or zip"
+                style={{
+                  flex: 1, padding: "11px 13px", borderRadius: 12, fontSize: 14,
+                  border: "1px solid var(--line)", background: "var(--bg)", color: "var(--ink)",
+                }}
+              />
+              <button
+                onClick={checkDestination}
+                disabled={destBusy || !destInput.trim()}
+                style={{
+                  padding: "11px 16px", borderRadius: 12, border: "1px solid var(--line)",
+                  fontSize: 14, fontWeight: 600, background: "transparent", color: "var(--ink)",
+                  cursor: "pointer", opacity: destBusy || !destInput.trim() ? 0.6 : 1,
+                }}
+              >
+                {destBusy ? "…" : "Check"}
+              </button>
+            </div>
+
+            {destResult && !destResult.error && (
+              <div style={{ marginTop: 14, padding: 15, borderRadius: 14,
+                            background: "var(--sage-wash, rgba(150,180,150,.08))", border: "1px solid var(--line)" }}>
+                <div style={{ fontSize: 13, color: "var(--ink-soft)" }}>{destResult.location}</div>
+                <div style={{ fontSize: 16, fontWeight: 600, marginTop: 3 }}>{destResult.headline}</div>
+                <div style={{ fontSize: 13, color: "var(--ink-soft)", marginTop: 5, lineHeight: 1.45 }}>{destResult.note}</div>
+                {destResult.readings && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 14px", marginTop: 11, fontSize: 12 }}>
+                    <Reading label="Air (PM2.5)" v={destResult.readings.air_quality_pm25} unit=" µg/m³" />
+                    <Reading label="Pollen" v={destResult.readings.pollen} />
+                    <Reading label="Ozone" v={destResult.readings.ozone} unit=" ppb" />
+                    <Reading label="UV" v={destResult.readings.uv_index} />
+                  </div>
+                )}
+                <div style={{ fontSize: 10.5, color: "var(--ink-faint, var(--ink-soft))", marginTop: 11, fontStyle: "italic" }}>
+                  {destResult.disclaimer}
+                </div>
+              </div>
+            )}
+            {destResult && destResult.error && (
+              <div style={{ fontSize: 12.5, marginTop: 10, color: "var(--warn, #b4694a)" }}>{destResult.error}</div>
+            )}
+          </div>
+
+          <div style={{ marginTop: 22 }}>
             <div className="step-label" style={{ fontSize: 18 }}>Privacy &amp; AI</div>
             {CONSENTS.map((c) => (
               <div key={c.key} style={{ padding: "14px 0", borderBottom: "1px solid var(--line)" }}>
@@ -156,6 +228,15 @@ export function Settings({ onBack, email }: { onBack: () => void; email: string 
         </>
       )}
     </div>
+  );
+}
+
+function Reading({ label, v, unit = "" }: { label: string; v: number | null | undefined; unit?: string }) {
+  if (v === null || v === undefined) return null;
+  return (
+    <span style={{ color: "var(--ink-soft)" }}>
+      {label}: <b style={{ color: "var(--ink)", fontWeight: 600 }}>{Math.round(v * 10) / 10}{unit}</b>
+    </span>
   );
 }
 
