@@ -1,0 +1,23 @@
+# Render deployment config for the ImmunoSense API.
+# Set secret env vars in the Render dashboard (NOT here) — this file is in git.
+services:
+  - type: web
+    name: immunosense-api
+    runtime: python
+    plan: free            # upgrade to 'starter' if free-tier memory is too small for torch
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn server.api.app:app --host 0.0.0.0 --port $PORT"
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.3"
+      # ---- Secrets: set these in the Render dashboard, do NOT hardcode ----
+      # DATABASE_URL            (Supabase POOLER, superuser postgres.<ref> — migrations/startup)
+      # APP_DATABASE_URL        (Supabase POOLER, immunosense_app.<ref> — RLS runtime role)
+      # SUPABASE_JWKS_URL
+      # SUPABASE_URL
+      # SUPABASE_SERVICE_ROLE_KEY
+      # SUPABASE_STORAGE_BUCKET (= meal-photos)
+      # CORS_ORIGINS            (your web app URL; comma-separate multiple)
+      # ENABLE_DEBUG_ENDPOINT   (0 in production)
+      # DEV_AUTH                (0 in production)

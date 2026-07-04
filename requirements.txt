@@ -1,0 +1,42 @@
+# Runtime dependencies for the ImmunoSense API (deployment).
+# Verified: the app boots + /health returns 200 with this set (torch/lightgbm ARE
+# needed — the biomarker + dietary agents import them at load time).
+
+# Web framework + server
+fastapi>=0.110
+uvicorn[standard]>=0.27
+pydantic>=2.6
+pydantic-settings>=2.1
+
+# Database
+sqlalchemy>=2.0
+psycopg2-binary>=2.9
+alembic>=1.13
+
+# Auth
+PyJWT[crypto]>=2.8
+cryptography>=42.0
+
+# HTTP (geocoding, Supabase storage)
+httpx>=0.27
+requests>=2.31
+
+# Numeric
+numpy>=1.24
+pandas>=2.0
+scipy>=1.10
+python-dateutil>=2.8
+rapidfuzz>=3.0
+
+# ML libraries — imported at load time by the biomarker + dietary agents.
+# (Large, esp. torch ~800MB-2GB. See DEPLOY_NOTES if the host's free tier struggles.)
+torch>=2.0
+lightgbm>=4.0
+xgboost>=2.0
+shap>=0.43
+scikit-learn>=1.3
+joblib>=1.3
+
+# Lazy-loaded (only if Claude text-feature-mapping is used). Included to avoid a
+# runtime import error if those optional paths are hit.
+anthropic>=0.20
